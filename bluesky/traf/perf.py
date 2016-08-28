@@ -2,10 +2,10 @@ import os
 import numpy as np
 from xml.etree import ElementTree
 from math import *
-from ..tools.aero import ft, g0, a0, T0, rho0, gamma1, gamma2,  beta, R, kts, lbs, inch, sqft, fpm
-from ..tools.aero_np import vtas2cas
+from ..tools.aero import ft, g0, a0, T0, rho0, gamma1, gamma2,  beta, R, \
+    kts, lbs, inch, sqft, fpm, vtas2cas
 
-from ..tools.performance import esf, phases, limits
+from performance import esf, phases, limits
 
 
 class CoeffBS:
@@ -338,7 +338,8 @@ class Perf():
         
         # reference velocities
         self.refma= np.array ([]) # reference Mach
-        self.refcas= np.array ([]) # reference CAS        
+        self.refcas= np.array ([]) # reference CAS  
+        self.atrans=np.array([]) # crossover altitude
         
         # limits
         self.vm_to = np.array([]) # min takeoff spd (w/o mass, density)
@@ -417,6 +418,10 @@ class Perf():
 
         self.refma  = np.append(self.refma, coeffBS.cr_Ma[self.coeffidx]) # nominal cruise Mach at 35000 ft
         self.refcas = np.append(self.refcas, vtas2cas(coeffBS.cr_spd[self.coeffidx], 35000*ft)) # nominal cruise CAS
+        
+        # calculate the crossover altitude according to the BADA 3.12 User Manual
+        self.atrans = ((1000/6.5)*(T0*(1-((((1+gamma1*(self.refcas/a0)**2)**(gamma2))-1) /  \
+        (((1+gamma1*self.refma**2)**(gamma2))-1))**((-(beta)*R)/g0))))
 
         # limits   
         self.vm_to = np.append(self.vm_to, coeffBS.vmto[self.coeffidx])
@@ -531,6 +536,7 @@ class Perf():
         # reference speeds
         self.refma   = np.delete(self.refma, idx)   # nominal cruise Mach at 35000 ft
         self.refcas  = np.delete(self.refcas, idx)  # nominal cruise CAS
+        self.atrans = np.delete(self.atrans, idx)   # crossover altitude
 
         # aerodynamics
         self.CD0     = np.delete(self.CD0, idx)      # parasite drag coefficient
@@ -630,9 +636,6 @@ class Perf():
         self.climb = np.array(self.traf.delalt > epsalt)
         self.descent = np.array(self.traf.delalt<epsalt)
   
-        #crossover altitude (BADA User Manual 3.12, p. 12)
-        self.atrans = (1000/6.5)*(T0*(1-((((1+gamma1*(self.refcas/a0)**2)**(gamma2))-1) /  \
-        (((1+gamma1*self.refma**2)**(gamma2))-1))**((-(beta)*R)/g0)))
 
         # crossover altitiude
         self.traf.abco = np.array(self.traf.alt>self.atrans)
@@ -700,38 +703,41 @@ class Perf():
 
         return
 
-
-
     def limits(self):
         """Flight envelope"""
 
         # combine minimum speeds and flight phases. Phases initial climb, cruise
         # and approach use the same CLmax and thus the same function for Vmin
-        self.vmto = vtas2cas(self.vm_to*np.sqrt(self.mass/self.traf.rho), self.traf.alt)
-        self.vmic = vtas2cas(np.sqrt(2*self.mass*g0/(self.traf.rho*self.clmaxcr*self.Sref)), self.traf.alt)
+        self.vmto = self.vm_to*np.sqrt(self.mass/self.traf.rho)
+        self.vmic = np.sqrt(2*self.mass*g0/(self.traf.rho*self.clmaxcr*self.Sref))
         self.vmcr = self.vmic
         self.vmap = self.vmic
-        self.vmld = vtas2cas(self.vm_ld*np.sqrt(self.mass/self.traf.rho), self.traf.alt)
+        self.vmld = self.vm_ld*np.sqrt(self.mass/self.traf.rho)
 
         # summarize
         # note: aircraft on ground may be pushed back
         self.vmin = (self.phase==1)*self.vmto + ((self.phase==2) + (self.phase==3) + (self.phase==4))*self.vmcr + \
                     (self.phase==5)*self.vmld + (self.phase==6)*-10.0
+        # minimum speeds are required in cas
+        self.vmin= vtas2cas(self.vmin, self.traf.alt)            
 
         # forwarding to tools
-        self.traf.lspd, self.traf.lalt, self.traf.lvs, self.traf.ama = \
-        limits(self.traf.desspd, self.traf.lspd, self.vmin, self.vmo, self.mmo,\
-        self.traf.M, self.traf.ama, self.traf.alt, self.hmaxact, self.traf.desalt, self.traf.lalt,\
-        self.maxthr, self.Thr,self.traf.lvs, self.D, self.traf.tas, self.mass, self.ESF)        
+        self.traf.limspd, self.traf.limalt, self.traf.limvs, self.traf.ama = \
+        limits(self.traf.desspd, self.traf.limspd, self.vmin, self.vmo, self.mmo,\
+        self.traf.M, self.traf.ama, self.traf.alt, self.hmaxact, self.traf.desalt, self.traf.limalt,\
+        self.maxthr, self.Thr,self.traf.limvs, self.D, self.traf.tas, self.mass, self.ESF)        
 
         return
 
-    def engchange(self, acid, engid):
+    def engchange(self, idx, engid=None):
         """change of engines - for jet aircraft only!"""
-        idx = self.traf.id.index(acid)
+        if not engid:
+            disptxt = "available engine types:\n" + '\n'.join(self.traf.engines[idx]) + \
+                      "\nChange engine with ENG acid engine_id"
+            return False, disptxt
+        engidx = self.traf.engines[idx].index(engid)
+        self.jetengidx = coeffBS.jetenlist.index(coeffBS.engines[idx][engidx])
 
-        self.jetengidx = coeffBS.jetenlist.index(coeffBS.engines[idx][engid])
-  
         # exchange engine parameters
 
         self.rThr[idx]   = coeffBS.rThr[self.jetengidx]*coeffBS.n_eng[idx] # rated thrust (all engines)

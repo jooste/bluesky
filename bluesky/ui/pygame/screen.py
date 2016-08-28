@@ -6,7 +6,8 @@ import datetime, os
 
 import numpy as np
 
-from ...tools.aero_np import ft, kts, nm, latlondist, qdrdist, qdrpos
+from ...tools import geo
+from ...tools.aero import ft, kts, nm
 from ...tools.misc import tim2txt
 import splash
 from fastfont import Fastfont
@@ -88,6 +89,9 @@ class Screen:
 
         # Isometric display parameter
         self.isoalt = 0.  # how many meters one pixel is high
+
+        # Display ADS-B range flag
+        self.swAdsbCoverage = False
 
         # Update rate radar:
         self.radardt = 0.10  # 10x per sec 0.25  # 4x per second max
@@ -272,8 +276,13 @@ class Screen:
         self.aplabel = len(navdb.aplat) * [0]
 
     def echo(self, msg):
-        self.editwin.echo(msg)
+        msgs = msg.split('\n')
+        for m in msgs:
+            self.editwin.echo(m)
         return
+
+    def showssd(self, param):
+        return False,"SSD visualization only available in QtGL GUI"
 
     def cmdline(self, text):
         self.editwin.insert(text)
@@ -286,7 +295,7 @@ class Screen:
             if i >= 0:
                 self.ndlat = traf.lat[i]
                 self.ndlon = traf.lon[i]
-                self.ndcrs = traf.trk[i]
+                self.ndcrs = traf.hdg[i]
             else:
                 self.swnavdisp = False
         else:
@@ -523,7 +532,7 @@ class Screen:
 
                 #FIR CIRCLE
                 if traf.area == "Circle":
-                    lat2_circle, lon2_circle = qdrpos(sim.metric.fir_circle_point[0], sim.metric.fir_circle_point[1],
+                    lat2_circle, lon2_circle = geo.qdrpos(sim.metric.fir_circle_point[0], sim.metric.fir_circle_point[1],
                                                       180, sim.metric.fir_circle_radius)
 
                     x_circle, y_circle = self.ll2xy(sim.metric.fir_circle_point[0], sim.metric.fir_circle_point[1])
@@ -551,7 +560,7 @@ class Screen:
                                    (x0[i], y0[i]), (x1[i], y1[i]))
 
             #---------- Draw ADSB Coverage Area
-            if traf.swAdsbCoverage:
+            if self.swAdsbCoverage:
                 # These points are based on the positions of the antennas with range = 200km
                 adsbCoverageLat = [53.7863,53.5362,52.8604,51.9538,51.2285,50.8249,50.7382,
                                    50.9701,51.6096,52.498,53.4047,53.6402]
@@ -608,13 +617,13 @@ class Screen:
                 ltx, lty = self.ll2xy(traf.lastlat, traf.lastlon)
 
             # Find pixel size of horizontal separation on screen
-            pixelrad=self.dtopix_eq(traf.dbconf.R/2)
+            pixelrad=self.dtopix_eq(traf.asas.R/2)
 
             # Loop through all traffic indices which we found on screen
             for i in trafsel:
 
                 # Get index of ac symbol, based on heading and its rect object
-                isymb = int((traf.trk[i] - self.ndcrs) / 6.) % 60
+                isymb = int((traf.hdg[i] - self.ndcrs) / 6.) % 60
                 pos = self.acsymbol[isymb].get_rect()
 
                 # Draw aircraft symbol
@@ -629,7 +638,7 @@ class Screen:
                 # Normal symbol if no conflict else amber
                 toosmall=self.lat1-self.lat0>6 #don't draw circles if zoomed out too much
 
-                if traf.iconf[i]<0:
+                if len(traf.asas.iconf[i]) == 0:
                     self.win.blit(self.acsymbol[isymb], pos)
                     if self.swsep and not toosmall:
                         pg.draw.circle(self.win,green,(int(trafx[i]),int(trafy[i])),pixelrad,1)
@@ -665,7 +674,7 @@ class Screen:
                 if not label[:3] == traf.label[i][:3]:
                     traf.label[i] = []
                     labelbmp = pg.Surface((100, 60), 0, self.win)
-                    if traf.iconf[i]<0:
+                    if len(traf.asas.iconf[i]) == 0:
                         acfont = self.fontrad
                     else:
                         acfont = self.fontamb
@@ -705,12 +714,12 @@ class Screen:
 
 
             # Draw conflicts: line from a/c to closest point of approach
-            if traf.dbconf.nconf>0:
-                xc,yc = self.ll2xy(traf.dbconf.latowncpa,traf.dbconf.lonowncpa)
-                yc    = yc - traf.dbconf.altowncpa*self.isoalt
+            if traf.asas.nconf>0:
+                xc,yc = self.ll2xy(traf.asas.latowncpa,traf.asas.lonowncpa)
+                yc    = yc - traf.asas.altowncpa*self.isoalt
 
-                for j in range(traf.dbconf.nconf):
-                    i = traf.id2idx(traf.dbconf.idown[j])
+                for j in range(traf.asas.nconf):
+                    i = traf.id2idx(traf.asas.confpairs[j][0])
                     if i>=0 and i<traf.ntraf and (i in trafsel):
                         pg.draw.line(self.win,amber,(xc[j],yc[j]),(trafx[i],trafy[i]))             
                 
@@ -793,13 +802,13 @@ class Screen:
                                  "Freq=" + str(int(len(sim.dts) / max(0.001, sum(sim.dts)))))
                                  
             self.fontsys.printat(self.win, 10+240, 2, \
-                                 "#LOS      = " + str(len(traf.dbconf.LOSlist_now)))
+                                 "#LOS      = " + str(len(traf.asas.LOSlist_now)))
             self.fontsys.printat(self.win, 10+240, 18, \
-                                 "Total LOS = " + str(len(traf.dbconf.LOSlist_all)))
+                                 "Total LOS = " + str(len(traf.asas.LOSlist_all)))
             self.fontsys.printat(self.win, 10+240, 34, \
-                                 "#Con      = " + str(len(traf.dbconf.conflist_now)))
+                                 "#Con      = " + str(len(traf.asas.conflist_now)))
             self.fontsys.printat(self.win, 10+240, 50, \
-                                 "Total Con = " + str(len(traf.dbconf.conflist_all)))                                 
+                                 "Total Con = " + str(len(traf.asas.conflist_all)))                                 
 
             # Frame ready, flip to screen
             pg.display.flip()
@@ -829,7 +838,7 @@ class Screen:
             y = self.height * (self.lat1 - lat) / (self.lat1 - self.lat0)
         else:
             # NAVDISP mode:
-            qdr, dist = qdrdist(self.ndlat, self.ndlon, lat, lon)
+            qdr, dist = geo.qdrdist(self.ndlat, self.ndlon, lat, lon)
             alpha = np.radians(qdr - self.ndcrs)
             base = 30. * (self.lat1 - self.lat0)
             x = dist * np.sin(alpha) / base * self.height + self.width / 2
@@ -872,7 +881,7 @@ class Screen:
         # Else NAVDISP mode
         else:
             base = 30. * (self.lat1 - self.lat0)
-            dist = latlondist(self.ndlat, self.ndlon, lat, lon) / nm
+            dist = geo.latlondist(self.ndlat, self.ndlon, lat, lon) / nm
             sw = dist < base
 
         return sw
@@ -925,19 +934,22 @@ class Screen:
 
         return
 
-    def pan(self, (xlat, xlon), absolute=False):
+    def pan(self, *args):
         """Pan function:
-               absolute: lat,lon; 
-               relative: screen width factor,screen height factor"""
-        if absolute:
-            lat,lon = xlat,xlon
-
-        # relative        
+               absolute: lat,lon;
+               relative: UP/DOWN/LEFT/RIGHT"""
+        lat, lon = self.ctrlat, self.ctrlon
+        if args[0] == "LEFT":
+            lon = self.ctrlon - 0.5 * (self.lon1 - self.lon0)
+        elif args[0] == "RIGHT":
+            lon = self.ctrlon + 0.5 * (self.lon1 - self.lon0)
+        elif args[0] == "UP":
+            lat = self.ctrlat + 0.5 * (self.lat1 - self.lat0)
+        elif args[0] == "DOWN":
+            lat = self.ctrlat - 0.5 * self.lat1 - self.lat0
         else:
-            latsize = self.lat1 - self.lat0
-            lonsize = self.lon1 - self.lon0
-            lat,lon = self.ctrlat + xlat*latsize, self.ctrlon + xlon*lonsize
-            
+            lat, lon = args
+
         # Maintain size
         dellat2 = (self.lat1 - self.lat0) * 0.5
 
@@ -1054,28 +1066,35 @@ class Screen:
 
     def objappend(self,itype,name,data):
         """Add user defined objects"""
+        if data is None:
+            return self.objdel()
         self.objtype.append(itype)
         self.objcolor.append(blue)
         self.objdata.append(data)
-        
-        self.redrawradbg = True # redraw background
+
+        self.redrawradbg = True  # redraw background
 
         return
-        
 
     def objdel(self):
         """Add user defined objects"""
-        self.objtype  = []
-        self.objcolor = []
-        self.objdata  = []
+        self.objtype     = []
+        self.objcolor    = []
+        self.objdata     = []
+        self.redrawradbg = True  # redraw background
         return
-        
-    def showroute(self,acid): # Toggle show route for an aircraft id
-        if self.acidrte==acid:
-           self.acidrte = "" # Click twice on same: route disappear
+
+    def showroute(self, acid):  # Toggle show route for an aircraft id
+        if self.acidrte == acid:
+            self.acidrte = ""  # Click twice on same: route disappear
         else:
-           self.acidrte = acid # Show this route
+            self.acidrte = acid  # Show this route
         return
+
+    def showacinfo(self, acid, infotext):
+        self.echo(infotext)
+        self.showroute(acid)
+        return True
 
     def getviewlatlon(self): # Return current viewing area in lat, lon
         return self.lat0, self.lat1, self.lon0, self.lon1  
@@ -1113,6 +1132,9 @@ class Screen:
         elif sw == "SAT":
             self.swsat = not self.swsat
 
+        elif sw[:4] == "ADSB":
+            self.swAdsbCoverage = not self.swAdsbCoverage
+
         # Traffic labels: cycle nr of lines 0,1,2,3
         elif sw[:3] == "LAB":  # Nr lines in label
             self.swlabel = (self.swlabel + 1) % 4
@@ -1120,14 +1142,15 @@ class Screen:
                 self.swlabel = int(arg)
 
         else:
+            self.redrawradbg = False
             return False # switch not found
- 
+
+        self.redrawradbg = True
         return True # Success
 
     def show_file_dialog(self):
         return opendialog()
         
     def symbol(self):
-        print "Hello"
         self.swsep = not self.swsep
         return True

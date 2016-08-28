@@ -8,6 +8,9 @@ performance_model = 'bluesky'
 # Indicate the datafile path
 data_path = 'data'
 
+# Indicate the logfile path
+log_path = 'output'
+
 # Indicate the scenario path
 scenario_path = 'scenario'
 
@@ -25,6 +28,40 @@ start_location = 'EHAM'
 
 # Simulation timestep [seconds]
 simdt = 0.05
+
+# Snaplog dt [seconds]
+snapdt = 30.0
+
+# Instlog dt [seconds]
+instdt = 30.0
+
+# Skylog dt [seconds]
+skydt = 60.0
+
+# Selective snap log dt [seconds]
+selsnapdt = 5.0
+
+# Prefer compiled BlueSky modules (cgeo, casas)
+prefer_compiled = True
+
+#=========================================================================
+#=  ASAS default settings
+#=========================================================================
+
+# ASAS lookahead time [sec]
+asas_dtlookahead = 300.0
+
+# ASAS update interval [sec]
+asas_dt = 1.0
+
+# ASAS horizontal PZ margin [nm]
+asas_pzr = 5.0
+
+# ASAS vertical PZ margin [ft]
+asas_pzh = 1000.0
+
+# ASAS safety margin [-]
+asas_mar = 1.05
 
 #=============================================================================
 #=   QTGL Gui specific settings below

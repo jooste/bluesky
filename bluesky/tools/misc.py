@@ -12,7 +12,7 @@ Created by  : Jacco M. Hoekstra
 
 from numpy import *
 from time import strftime, gmtime
-from aero import cas2tas, mach2tas, kts, nm
+from aero import cas2tas, mach2tas, kts
 
 
 def txt2alt(txt):
@@ -66,45 +66,10 @@ def txt2spd(txt, h):
     return acspd
 
 
-def kwikdist(lata, lona, latb, lonb):
-    """
-    Convert text to altitude: 4500 = 4500 ft,
-    Return altitude in meters
-    Quick and dirty dist [nm] inreturn
-    """
-
-    re = 6371000.  # readius earth [m]
-    dlat = array(radians(latb - lata))
-    dlon = array(radians(lonb - lona))
-    cavelat = array(cos(radians(lata + latb) / 2.))
-
-    dangle = sqrt(dlat * dlat + dlon * dlon * cavelat * cavelat)
-    dist = re * dangle / nm
-
-    return mat(dist)
-
-
-def kwikqdrdist(lata, lona, latb, lonb):
-    """Gives quick and dirty qdr[deg] and dist [nm]
-       (note: does not work well close to poles)"""
-
-    re = 6371000.  # radius earth [m]
-    dlat = array(radians(latb - lata))
-    dlon = array(radians(degto180(lonb - lona)))
-    cavelat = array(cos(radians(lata + latb) / 2.))
-
-    dangle = sqrt(dlat * dlat + dlon * dlon * cavelat * cavelat)
-    dist = re * dangle
-
-    qdr = degrees(arctan2(dlon * cavelat, dlat)) % 360.
-
-    return mat(qdr), mat(dist)
-
-
 def col2rgb(txt):
-    cols = {"black": (0, 0, 0),  "white": (255, 255, 255), "green": (0, 255, 0),
-            "red": (255, 0, 0),  "blue": (0, 0, 255),      "magenta": (255, 0, 255),
-            "yellow": (240, 255, 127), "amber": (255, 255, 0),  "cyan": (0, 255, 255)}
+    cols = {"black": (0, 0, 0), "white": (255, 255, 255), "green": (0, 255, 0),
+            "red": (255, 0, 0), "blue": (0, 0, 255), "magenta": (255, 0, 255),
+            "yellow": (240, 255, 127), "amber": (255, 255, 0), "cyan": (0, 255, 255)}
     try:
         rgb = cols[txt.lower().strip()]
     except:
@@ -116,6 +81,10 @@ def col2rgb(txt):
 def degto180(angle):
     """Change to domain -180,180 """
     return (angle + 180.) % 360 - 180.
+
+def degtopi(angle):
+    """Change to domain -pi,pi """
+    return (angle + pi) % (2.*pi) - pi
 
 
 def findnearest(lat, lon, latarr, lonarr):
@@ -132,7 +101,11 @@ def findnearest(lat, lon, latarr, lonarr):
         return -1
 
 
-def cmdsplit(cmdline):
+def cmdsplit(cmdline, trafids=None):
+    cmdline = cmdline.strip()
+    if len(cmdline) == 0:
+        return '', []
+
     # Use both comma and space as a separator: two commas mean an empty argument
     while cmdline.find(",,") >= 0:
         cmdline = cmdline.replace(",,", ",@,")  # Mark empty arguments
@@ -148,14 +121,20 @@ def cmdsplit(cmdline):
         if cmdargs[i] == "@":
             cmdargs[i] = ""
 
-    return cmdargs
+    # If a traffic id list is passed, check if command and first argument need to be switched
+    if trafids and len(cmdargs) > 1 and trafids.count(cmdargs[0]):
+        cmdargs[0:2] = cmdargs[1::-1]
+
+    # return command, argumentlist
+    return cmdargs[0], cmdargs[1:]
+
 
 def txt2lat(lattxt):
     """txt2lat: input txt: N52'14'13.5 or N52"""
-    txt = lattxt.replace("N","").replace("S","-") # North positive, sout negative    
-    neg = txt.count("-")>0
-    if txt.count("'")>0 or txt.count('"')>0:
-        txt = txt.replace('"',"'") # replace " by '
+    txt = lattxt.replace("N", "").replace("S", "-")  # North positive, South negative
+    neg = txt.count("-") > 0
+    if txt.count("'") > 0 or txt.count('"') > 0:
+        txt = txt.replace('"', "'")  # replace " by '
         degs = txt.split("'")
         div = 1
         lat = 0
@@ -164,35 +143,41 @@ def txt2lat(lattxt):
         else:
             f = 1.
         for deg in degs:
-            if len(deg)>0:
-                lat = lat+f*abs(float(deg))/float(div)
-                div = div*60
+            if len(deg) > 0:
+                lat = lat + f * abs(float(deg)) / float(div)
+                div = div * 60
     else:
         lat = float(txt)
     return lat
     # Return float
-        
+
+
 def txt2lon(lontxt):
     """txt2lat: input txt: N52'14'13.5 or N52"""
-    txt = lontxt.replace("E","").replace("W","-") # East positive, West negative    
-    neg = txt.count("-")>0
-    if txt.count("'")>0 or txt.count('"')>0:
-        txt = txt.replace('"',"'") # replace " by '
-        degs = txt.split("'")
-        div = 1
-        lon = 0
-        if neg:
-            f = -1.
-        else:
-            f = 1.
-        for deg in degs:
-                lon = lon+f*abs(float(deg))/float(div)
+    # It should first be checked if lontxt is a regular float, to avoid removing
+    # the 'e' in a scientific-notation number.
+    try:
+        lon = float(lontxt)
+    except ValueError:
+        txt = lontxt.replace("E", "").replace("W", "-")  # East positive, West negative
+        neg = txt.count("-") > 0
+        if txt.count("'") > 0 or txt.count('"') > 0:
+            txt = txt.replace('"', "'")  # replace " by '
+            degs = txt.split("'")
+            div = 1
+            lon = 0
+            if neg:
+                f = -1.
+            else:
+                f = 1.
+            for deg in degs:
+                lon = lon + f * abs(float(deg)) / float(div)
 
-                div = div*60
-    else:
-        lon = float(txt)
+                div = div * 60
+
     return lon
+
 
 def deg180(dangle):
     """ Convert any difference in angles to interval [ -180,180 ) """
-    return (dangle+180.)%360.-180.
+    return (dangle + 180.) % 360. - 180.

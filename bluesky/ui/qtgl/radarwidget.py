@@ -29,18 +29,19 @@ MAX_ALLPOLYS_SEGMENTS = 2000
 REARTH_INV            = 1.56961231e-7
 
 # Colors
-red                   = (1.0, 0.0, 0.0)
-green                 = (0.0, 1.0, 0.0)
-blue                  = (0.0, 0.0, 1.0)
-lightblue             = (0.0, 0.8, 1.0)
-lightblue2            = (0.33, 0.33, 0.45)
-lightblue3            = (0.58, 0.7, 0.92)
-lightblue4            = (0.86, 0.98, 1.0)
-cyan                  = (0.0, 1.0, 0.0)
-amber                 = (1.0, 0.6, 0.0)
-magenta               = (1.0, 0.0, 1.0)
-grey                  = (0.4, 0.4, 0.4)
-lightgrey             = (0.6, 0.6, 0.6)
+red                   = (255, 0,   0)
+green                 = (0,   255, 0)
+blue                  = (0,   0,   255)
+lightblue             = (0,   204, 255)
+lightblue2            = (85,  85,  115)
+lightblue3            = (148, 178, 235)
+lightblue4            = (220, 250, 255)
+cyan                  = (0,   255, 255)
+amber                 = (255, 160, 0)
+magenta               = (255, 0,   255)
+grey                  = (100, 100, 100)
+white                 = (255, 255, 255)
+lightgrey             = (160, 160, 160)
 
 VERTEX_IS_LATLON, VERTEX_IS_METERS, VERTEX_IS_SCREEN = range(3)
 ATTRIB_VERTEX, ATTRIB_TEXCOORDS, ATTRIB_LAT, ATTRIB_LON, ATTRIB_ORIENTATION, ATTRIB_COLOR, ATTRIB_TEXDEPTH = range(7)
@@ -123,7 +124,7 @@ class RadarWidget(QGLWidget):
         self.apt_inrange    = np.array([])
         self.ssd_all        = False
         self.navdb          = navdb
-        self.actnodeid      = 0
+        self.iactconn       = 0
         self.nodedata       = list()
 
         # Display flags
@@ -142,18 +143,18 @@ class RadarWidget(QGLWidget):
         manager.instance.activenode_changed.connect(self.actnodeChanged)
 
         # Load vertex data
-        self.vbuf_asphalt, self.vbuf_concrete, self.vbuf_runways, \
+        self.vbuf_asphalt, self.vbuf_concrete, self.vbuf_runways, self.vbuf_rwythr, \
             self.apt_ctrlat, self.apt_ctrlon, self.apt_indices = load_aptsurface()
 
-    @pyqtSlot(int)
-    def nodesChanged(self, nodeid):
+    @pyqtSlot(str, int)
+    def nodesChanged(self, address, nodeid, connidx):
         # For each node we have to keep data such as the visible polygons, etc.
         self.nodedata.append(nodeData())
 
     @pyqtSlot(int)
-    def actnodeChanged(self, nodeid):
-        self.actnodeid = nodeid
-        nact = self.nodedata[nodeid]
+    def actnodeChanged(self, nodeid, connidx):
+        self.iactconn = connidx
+        nact = self.nodedata[connidx]
         if len(nact.polydata) > 0:
             update_buffer(self.allpolysbuf, nact.polydata)
         self.allpolys.set_vertex_count(len(nact.polydata) / 2)
@@ -189,9 +190,9 @@ class RadarWidget(QGLWidget):
         self.aclonbuf      = create_empty_buffer(MAX_NAIRCRAFT * 4, usage=gl.GL_STREAM_DRAW)
         self.acaltbuf      = create_empty_buffer(MAX_NAIRCRAFT * 4, usage=gl.GL_STREAM_DRAW)
         self.actasbuf      = create_empty_buffer(MAX_NAIRCRAFT * 4, usage=gl.GL_STREAM_DRAW)
-        self.accolorbuf    = create_empty_buffer(MAX_NAIRCRAFT * 12, usage=gl.GL_STREAM_DRAW)
+        self.accolorbuf    = create_empty_buffer(MAX_NAIRCRAFT * 3, usage=gl.GL_STREAM_DRAW)
         self.aclblbuf      = create_empty_buffer(MAX_NAIRCRAFT * 24, usage=gl.GL_STREAM_DRAW)
-        self.confcpabuf    = create_empty_buffer(MAX_NCONFLICTS * 8, usage=gl.GL_STREAM_DRAW)
+        self.confcpabuf    = create_empty_buffer(MAX_NCONFLICTS * 16, usage=gl.GL_STREAM_DRAW)
         self.polyprevbuf   = create_empty_buffer(MAX_POLYPREV_SEGMENTS * 8, usage=gl.GL_DYNAMIC_DRAW)
         self.allpolysbuf   = create_empty_buffer(MAX_ALLPOLYS_SEGMENTS * 16, usage=gl.GL_DYNAMIC_DRAW)
         self.routebuf      = create_empty_buffer(MAX_ROUTE_LENGTH * 8, usage=gl.GL_DYNAMIC_DRAW)
@@ -210,7 +211,7 @@ class RadarWidget(QGLWidget):
         self.coastlines = RenderObject(gl.GL_LINES)
         coastvertices, coastindices = load_coastlines()
         self.coastlines.bind_attrib(ATTRIB_VERTEX, 2, coastvertices)
-        self.coastlines.bind_attrib(ATTRIB_COLOR, 3, np.array(lightblue2, dtype=np.float32), instance_divisor=1)
+        self.coastlines.bind_attrib(ATTRIB_COLOR, 3, np.array(lightblue2, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
         self.vcount_coast = len(coastvertices)
         self.coastindices = coastindices
         del coastvertices
@@ -218,30 +219,36 @@ class RadarWidget(QGLWidget):
         # ------- Runways --------------------------------
         self.runways = RenderObject(gl.GL_TRIANGLES)
         self.runways.bind_attrib(ATTRIB_VERTEX, 2, self.vbuf_runways)
-        self.runways.bind_attrib(ATTRIB_COLOR, 3, np.array(grey, dtype=np.float32), instance_divisor=1)
-        self.runways.set_vertex_count(len(self.vbuf_runways)/2)
+        self.runways.bind_attrib(ATTRIB_COLOR, 3, np.array(grey, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
+        self.runways.set_vertex_count(len(self.vbuf_runways) / 2)
+
+        #---------Runway Thresholds-----------------------
+        self.thresholds = RenderObject(gl.GL_TRIANGLES)
+        self.thresholds.bind_attrib(ATTRIB_VERTEX, 2, self.vbuf_rwythr)
+        self.thresholds.bind_attrib(ATTRIB_COLOR, 3, np.array(white, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
+        self.thresholds.set_vertex_count(len(self.vbuf_rwythr) / 2)
 
         # ------- Taxiways -------------------------------
         self.taxiways = RenderObject(gl.GL_TRIANGLES)
         self.taxiways.bind_attrib(ATTRIB_VERTEX, 2, self.vbuf_asphalt)
-        self.taxiways.bind_attrib(ATTRIB_COLOR, 3, np.array(grey, dtype=np.float32), instance_divisor=1)
-        self.taxiways.set_vertex_count(len(self.vbuf_asphalt)/2)
+        self.taxiways.bind_attrib(ATTRIB_COLOR, 3, np.array(grey, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
+        self.taxiways.set_vertex_count(len(self.vbuf_asphalt) / 2)
 
         # ------- Pavement -------------------------------
         self.pavement = RenderObject(gl.GL_TRIANGLES)
         self.pavement.bind_attrib(ATTRIB_VERTEX, 2, self.vbuf_concrete)
-        self.pavement.bind_attrib(ATTRIB_COLOR, 3, np.array(lightgrey, dtype=np.float32), instance_divisor=1)
-        self.pavement.set_vertex_count(len(self.vbuf_concrete)/2)
+        self.pavement.bind_attrib(ATTRIB_COLOR, 3, np.array(lightgrey, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
+        self.pavement.set_vertex_count(len(self.vbuf_concrete) / 2)
 
         # Polygon preview object
         self.polyprev = RenderObject(gl.GL_LINE_LOOP)
         self.polyprev.bind_attrib(ATTRIB_VERTEX, 2, self.polyprevbuf)
-        self.polyprev.bind_attrib(ATTRIB_COLOR, 3, np.array(lightblue, dtype=np.float32), instance_divisor=1)
+        self.polyprev.bind_attrib(ATTRIB_COLOR, 3, np.array(lightblue, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
 
         # Fixed polygons
         self.allpolys = RenderObject(gl.GL_LINES)
         self.allpolys.bind_attrib(ATTRIB_VERTEX, 2, self.allpolysbuf)
-        self.allpolys.bind_attrib(ATTRIB_COLOR, 3, np.array(blue, dtype=np.float32), instance_divisor=1)
+        self.allpolys.bind_attrib(ATTRIB_COLOR, 3, np.array(blue, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
 
         # ------- SSD object -----------------------------
         self.ssd = RenderObject(gl.GL_POINTS)
@@ -259,11 +266,11 @@ class RadarWidget(QGLWidget):
         # ------- Circle ---------------------------------
         # Create a new VAO (Vertex Array Object) and bind it
         self.protectedzone = RenderObject(gl.GL_LINE_LOOP, vertex_count=self.vcount_circle)
-        circlevertices = np.transpose(np.array((5.0*nm*np.cos(np.linspace(0.0, 2.0*np.pi, self.vcount_circle)), 5.0*nm*np.sin(np.linspace(0.0, 2.0*np.pi, self.vcount_circle))), dtype=np.float32))
+        circlevertices = np.transpose(np.array((2.5 * nm * np.cos(np.linspace(0.0, 2.0 * np.pi, self.vcount_circle)), 2.5 * nm * np.sin(np.linspace(0.0, 2.0 * np.pi, self.vcount_circle))), dtype=np.float32))
         self.protectedzone.bind_attrib(ATTRIB_VERTEX, 2, circlevertices)
         self.protectedzone.bind_attrib(ATTRIB_LAT, 1, self.aclatbuf, instance_divisor=1)
         self.protectedzone.bind_attrib(ATTRIB_LON, 1, self.aclonbuf, instance_divisor=1)
-        self.protectedzone.bind_attrib(ATTRIB_COLOR, 3, self.accolorbuf, instance_divisor=1)
+        self.protectedzone.bind_attrib(ATTRIB_COLOR, 3, self.accolorbuf, datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
 
         # ------- A/C symbol -----------------------------
         self.ac_symbol = RenderObject(gl.GL_TRIANGLE_FAN, vertex_count=4)
@@ -272,18 +279,18 @@ class RadarWidget(QGLWidget):
         self.ac_symbol.bind_attrib(ATTRIB_LAT, 1, self.aclatbuf, instance_divisor=1)
         self.ac_symbol.bind_attrib(ATTRIB_LON, 1, self.aclonbuf, instance_divisor=1)
         self.ac_symbol.bind_attrib(ATTRIB_ORIENTATION, 1, self.achdgbuf, instance_divisor=1)
-        self.ac_symbol.bind_attrib(ATTRIB_COLOR, 3, self.accolorbuf, instance_divisor=1)
+        self.ac_symbol.bind_attrib(ATTRIB_COLOR, 3, self.accolorbuf, datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
         self.aclabels = self.font.prepare_text_instanced(self.aclblbuf, (8, 3), self.aclatbuf, self.aclonbuf, self.accolorbuf, char_size=text_size, vertex_offset=(ac_size, -0.5 * ac_size))
 
         # ------- Conflict CPA lines ---------------------
         self.cpalines = RenderObject(gl.GL_LINES)
         self.cpalines.bind_attrib(ATTRIB_VERTEX, 2, self.confcpabuf)
-        self.cpalines.bind_attrib(ATTRIB_COLOR, 3, np.array(amber, dtype=np.float32), instance_divisor=1)
+        self.cpalines.bind_attrib(ATTRIB_COLOR, 3, np.array(amber, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
 
         # ------- Aircraft Route -------------------------
-        self.route = RenderObject(gl.GL_LINE_STRIP)
+        self.route = RenderObject(gl.GL_LINES)
         self.route.bind_attrib(ATTRIB_VERTEX, 2, self.routebuf)
-        self.route.bind_attrib(ATTRIB_COLOR, 3, np.array(magenta, dtype=np.float32), instance_divisor=1)
+        self.route.bind_attrib(ATTRIB_COLOR, 3, np.array(magenta, dtype=np.uint8), datatype=gl.GL_UNSIGNED_BYTE, normalize=True, instance_divisor=1)
         self.routelbl = self.font.prepare_text_instanced(self.routelblbuf, (12, 1), self.routewplatbuf, self.routewplonbuf, char_size=text_size, vertex_offset=(wpt_size, 0.5 * wpt_size))
 
         # ------- Waypoints ------------------------------
@@ -337,7 +344,7 @@ class RadarWidget(QGLWidget):
         self.globaldata.set_pan_and_zoom(self.panlat, self.panlon, self.zoom)
 
         # Clean up memory
-        del self.vbuf_asphalt, self.vbuf_concrete, self.vbuf_runways
+        del self.vbuf_asphalt, self.vbuf_concrete, self.vbuf_runways, self.vbuf_rwythr
 
         self.initialized = True
 
@@ -348,10 +355,10 @@ class RadarWidget(QGLWidget):
         gl_version = float(gl.glGetString(gl.GL_VERSION)[:3])
         if gl_version < 3.3:
             print('OpenGL context created with GL version %.1f' % gl_version)
-            qCritical('Your system reports that it supports OpenGL up to version %.1f. The minimum requirement for BlueSky is OpenGL 3.3. \
-                Generally, AMD/ATI/nVidia cards from 2008 and newer support OpenGL 3.3, and Intel integrated graphics from the Haswell \
-                generation and newer. If you think your graphics system should be able to support GL>=3.3 please open an issue report \
-                on the BlueSky Github page (https://github.com/ProfHoekstra/bluesky/issues)' % gl_version)
+            qCritical("""Your system reports that it supports OpenGL up to version %.1f. The minimum requirement for BlueSky is OpenGL 3.3.
+                Generally, AMD/ATI/nVidia cards from 2008 and newer support OpenGL 3.3, and Intel integrated graphics from the Haswell
+                generation and newer. If you think your graphics system should be able to support GL>=3.3 please open an issue report
+                on the BlueSky Github page (https://github.com/ProfHoekstra/bluesky/issues)""" % gl_version)
             return
 
         # background color
@@ -421,7 +428,7 @@ class RadarWidget(QGLWidget):
                 self.coastlines.draw(first_vertex=0, vertex_count=self.vcount_coast)
             else:
                 self.coastlines.bind()
-                wrapindex = np.uint32(self.coastindices[int(self.wraplon)+180])
+                wrapindex = np.uint32(self.coastindices[int(self.wraplon) + 180])
                 if self.wrapdir == 1:
                     gl.glVertexAttrib1f(ATTRIB_LON, 360.0)
                     self.coastlines.draw(first_vertex=0, vertex_count=wrapindex)
@@ -442,12 +449,11 @@ class RadarWidget(QGLWidget):
         # --- DRAW THE SELECTED AIRCRAFT ROUTE (WHEN AVAILABLE) ---------------
         if self.show_traf:
             self.route.draw()
-
-        if self.show_traf:
             self.cpalines.draw()
 
         # --- DRAW AIRPORT DETAILS (RUNWAYS, TAXIWAYS, PAVEMENTS) -------------
         self.runways.draw()
+        self.thresholds.draw()
         if self.zoom >= 1.0:
             for idx in self.apt_inrange:
                 self.taxiways.draw(first_vertex=idx[0], vertex_count=idx[1])
@@ -483,13 +489,13 @@ class RadarWidget(QGLWidget):
         # Draw waypoint symbols
         if self.show_wpt:
             self.waypoints.bind()
-            gl.glVertexAttrib3f(ATTRIB_COLOR, *lightblue3)
+            gl.glVertexAttrib4Nub(ATTRIB_COLOR, *(lightblue3 + (255,)))
             self.waypoints.draw(n_instances=nwaypoints)
 
         # Draw airport symbols
         if self.show_apt:
             self.airports.bind()
-            gl.glVertexAttrib3f(ATTRIB_COLOR, *lightblue3)
+            gl.glVertexAttrib4Nub(ATTRIB_COLOR, *(lightblue3 + (255,)))
             self.airports.draw(n_instances=nairports)
 
         if self.do_text:
@@ -500,20 +506,20 @@ class RadarWidget(QGLWidget):
                 self.font.set_char_size(self.aptlabels.char_size)
                 self.font.set_block_size(self.aptlabels.block_size)
                 self.aptlabels.bind()
-                gl.glVertexAttrib3f(ATTRIB_COLOR, *lightblue4)
+                gl.glVertexAttrib4Nub(ATTRIB_COLOR, *(lightblue4 + (255,)))
                 self.aptlabels.draw(n_instances=nairports)
             if self.show_wpt:
                 self.font.set_char_size(self.wptlabels.char_size)
                 self.font.set_block_size(self.wptlabels.block_size)
                 self.wptlabels.bind()
-                gl.glVertexAttrib3f(ATTRIB_COLOR, *lightblue4)
+                gl.glVertexAttrib4Nub(ATTRIB_COLOR, *(lightblue4 + (255,)))
                 self.wptlabels.draw(n_instances=nwaypoints)
 
             if self.show_traf and self.route.vertex_count > 1:
-                gl.glVertexAttrib3f(ATTRIB_COLOR, *magenta)
+                gl.glVertexAttrib4Nub(ATTRIB_COLOR, *(magenta + (255,)))
                 self.font.set_char_size(self.routelbl.char_size)
                 self.font.set_block_size(self.routelbl.block_size)
-                self.routelbl.draw(n_instances=self.route.vertex_count-1)
+                self.routelbl.draw()
 
             if self.naircraft > 0 and self.show_traf and self.show_lbl:
                 self.font.set_char_size(self.aclabels.char_size)
@@ -535,6 +541,9 @@ class RadarWidget(QGLWidget):
 
     def resizeGL(self, width, height):
         """Called upon window resizing: reinitialize the viewport."""
+        if not self.initialized:
+            return
+
         # update the window size
         # Qt5 supports getting the device pixel ratio, which can be > 1 for HiDPI displays such as Mac Retina screens
         pixel_ratio = 1
@@ -556,15 +565,24 @@ class RadarWidget(QGLWidget):
         self.event(PanZoomEvent(zoom=zoom, origin=origin))
 
     def update_route_data(self, data):
-        if data.acid != "":
+        self.route_acid = data.acid
+        if data.acid != "" and len(data.lat) > 0:
             nsegments = len(data.lat)
-            self.route.set_vertex_count(nsegments)
-            routedata       = np.empty(2 * nsegments, dtype=np.float32)
-            routedata[::2]  = data.lat
-            routedata[1::2] = data.lon
+            data.iactwp = max(0, data.iactwp)
+            self.routelbl.n_instances = nsegments
+            self.route.set_vertex_count(2 * nsegments)
+            routedata = np.empty(4 * nsegments, dtype=np.float32)
+            routedata[0:4] = [data.aclat, data.aclon,
+                data.lat[data.iactwp], data.lon[data.iactwp]]
+
+            routedata[4::4] = data.lat[:-1]
+            routedata[5::4] = data.lon[:-1]
+            routedata[6::4] = data.lat[1:]
+            routedata[7::4] = data.lon[1:]
+
             update_buffer(self.routebuf, routedata)
-            update_buffer(self.routewplatbuf, data.lat[1:])
-            update_buffer(self.routewplonbuf, data.lon[1:])
+            update_buffer(self.routewplatbuf, np.array(data.lat, dtype=np.float32))
+            update_buffer(self.routewplonbuf, np.array(data.lon, dtype=np.float32))
             wptlabels = []
             for wp in data.wptlabels:
                 wptlabels += wp[:12].ljust(12)
@@ -586,12 +604,13 @@ class RadarWidget(QGLWidget):
 
             # CPA lines to indicate conflicts
             ncpalines = len(data.confcpalat)
+
             cpalines  = np.zeros(4 * ncpalines, dtype=np.float32)
             self.cpalines.set_vertex_count(2 * ncpalines)
 
             # Labels and colors
             rawlabel = ''
-            color    = np.zeros((self.naircraft, 3), dtype=np.float32)
+            color    = np.empty((self.naircraft, 3), dtype=np.uint8)
             for i in range(self.naircraft):
                 if np.isnan(data.tas[i]):
                     print 'CAS NaN in %d: %s' % (i, data.id[i])
@@ -603,11 +622,12 @@ class RadarWidget(QGLWidget):
 
                 # Make label: 3 lines of 8 characters per aircraft
                 rawlabel += '%-8sFL%03d   %-8d' % (data.id[i][:8], int(data.alt[i] / ft / 100), int(data.cas[i] / kts))
-                confidx = data.iconf[i]
-                if confidx >= 0:
+                confindices = data.iconf[i]
+                if len(confindices) > 0:
                     color[i, :] = amber
-                    cpalines[4 * confidx : 4 * confidx + 4] = [ data.lat[i], data.lon[i],
-                                                                data.confcpalat[confidx], data.confcpalon[confidx]]
+                    for confidx in confindices:
+                        cpalines[4 * confidx : 4 * confidx + 4] = [ data.lat[i], data.lon[i],
+                                                                    data.confcpalat[confidx], data.confcpalon[confidx]]
                 else:
                     color[i, :] = green
 
@@ -618,9 +638,9 @@ class RadarWidget(QGLWidget):
             # If there is a visible route, update the start position
             if self.route_acid != "":
                 if self.route_acid in data.id:
-                    idx = data.id.index(self.route_acid)           
-                    update_buffer(self.routebuf, np.array([data.lat[idx], data.lon[idx]],  \
-                                    dtype=np.float32))
+                    idx = data.id.index(self.route_acid)
+                    update_buffer(self.routebuf,
+                                  np.array([data.lat[idx], data.lon[idx]], dtype=np.float32))
 
     def show_ssd(self, arg):
         if arg == 'ALL':
@@ -635,11 +655,11 @@ class RadarWidget(QGLWidget):
                 self.ssd_ownship = np.append(self.ssd_ownship, arg)
 
     def updatePolygon(self, name, data_in):
-        nact = self.nodedata[self.actnodeid]
+        nact = self.nodedata[manager.sender()[0]]
         if name in nact.polynames:
             # We're either updating a polygon, or deleting it. In both cases
             # we remove the current one.
-            nact.polydata = np.delete(nact.polydata, range(nact.polynames[name]))
+            nact.polydata = np.delete(nact.polydata, range(*nact.polynames[name]))
             del nact.polynames[name]
 
         if data_in is not None:

@@ -11,10 +11,11 @@ from screenio import ScreenIO
 from simevents import StackTextEventType, BatchEventType, BatchEvent, SimStateEvent, SimQuitEventType
 from ...traf import Traffic
 from ...navdb import Navdatabase
-from ...stack import Commandstack
-# from ...traf import Metric
+from ... import stack
+from ...traf import Metric
 from ... import settings
 from ...tools.datafeed import Modesbeast
+from ...tools import datalog
 
 
 class Simulation(QObject):
@@ -28,11 +29,15 @@ class Simulation(QObject):
         super(Simulation, self).__init__()
         self.manager     = manager
         self.running     = True
-        self.mode        = Simulation.init
-        self.samplecount = 0
+        self.state       = Simulation.init
+        self.prevstate   = None
 
         # Set starting system time [milliseconds]
         self.syst        = 0.0
+
+        # Benchmark time and timespan [seconds]
+        self.bencht      = 0.0
+        self.benchdt     = -1.0
 
         # Starting simulation time [seconds]
         self.simt        = 0.0
@@ -50,44 +55,55 @@ class Simulation(QObject):
         self.ffmode      = False
         self.ffstop      = None
 
+        # If available, name of the currently running scenario
+        self.scenname    = 'Untitled'
+
         # Simulation objects
         self.navdb       = Navdatabase('global')
         self.screenio    = ScreenIO(self, manager)
         self.traf        = Traffic(self.navdb)
-        self.stack       = Commandstack(self, self.traf, self.screenio)
-        # Metrics
-        self.metric      = None
-        # self.metric      = Metric()
-        self.beastfeed     = Modesbeast(self.stack, self.traf)
+
+        # Additional modules
+        self.metric      = Metric()
+        self.beastfeed   = Modesbeast(self.traf)
+
+        # Initialize the stack module once
+        stack.init(self, self.traf, self.screenio)
 
     def doWork(self):
-        self.syst = int(time.time() * 1000.0)
+        self.syst  = int(time.time() * 1000.0)
         self.fixdt = self.simdt
-        self.sendState()
 
         while self.running:
-            # Timing bookkeeping
-            self.samplecount += 1
+            # Update screen logic
+            self.screenio.update()
 
             # Update the Mode-S beast parsing
             self.beastfeed.update()
 
-            # TODO: what to do with init
-            if self.mode == Simulation.init:
-                self.mode = Simulation.op
+            # Simulation starts as soon as there is traffic, or pending commands
+            if self.state == Simulation.init:
+                if self.traf.ntraf > 0 or len(stack.get_scendata()[0]) > 0:
+                    self.start()
+                    if self.benchdt > 0.0:
+                        self.fastforward(self.benchdt)
+                        self.bencht = time.time()
 
-            if self.mode == Simulation.op:
-                self.stack.checkfile(self.simt)
+            if self.state == Simulation.op:
+                stack.checkfile(self.simt)
 
             # Always update stack
-            self.stack.process(self, self.traf, self.screenio)
+            stack.process(self, self.traf, self.screenio)
 
-            if self.mode == Simulation.op:
+            if self.state == Simulation.op:
+
                 self.traf.update(self.simt, self.simdt)
 
                 # Update metrics
-                if self.metric is not None:
-                    self.metric.update(self, self.traf)
+                self.metric.update(self)
+
+                # Update log
+                datalog.update(self.simt)
 
                 # Update time for the next timestep
                 self.simt += self.simdt
@@ -95,33 +111,48 @@ class Simulation(QObject):
             # Process Qt events
             self.manager.processEvents()
 
-            # When running at a fixed rate, increment system time with sysdt and calculate remainder to sleep
-            if not self.ffmode:
+            # When running at a fixed rate, or when in hold/init, increment system time with sysdt and calculate remainder to sleep
+            if not self.ffmode or not self.state == Simulation.op:
                 self.syst += self.sysdt
                 remainder = self.syst - int(1000.0 * time.time())
 
                 if remainder > 0:
                     QThread.msleep(remainder)
             elif self.ffstop is not None and self.simt >= self.ffstop:
-                self.start()
+                if self.benchdt > 0.0:
+                    self.screenio.echo('Benchmark complete: %d samples in %.3f seconds.' % (self.screenio.samplecount, time.time() - self.bencht))
+                    self.benchdt = -1.0
+                    self.pause()
+                else:
+                    self.start()
+
+            # Inform main of our state change
+            if not self.state == self.prevstate:
+                self.sendState()
+                self.prevstate = self.state
 
     def stop(self):
-        self.mode = Simulation.end
-        self.sendState()
+        self.state   = Simulation.end
+        datalog.reset()
 
     def start(self):
         if self.ffmode:
             self.syst = int(time.time() * 1000.0)
-        self.ffmode = False
-        self.mode   = self.op
+        self.ffmode  = False
+        self.state   = Simulation.op
 
     def pause(self):
-        self.mode   = self.hold
+        self.state   = Simulation.hold
 
     def reset(self):
-        self.simt   = 0.0
-        self.mode   = self.init
+        self.simt     = 0.0
+        self.state    = Simulation.init
+        self.ffmode   = False
+        self.scenname = 'Untitled'
         self.traf.reset(self.navdb)
+        stack.reset()
+        datalog.reset()
+        self.screenio.reset()
 
     def quit(self):
         self.running = False
@@ -130,17 +161,15 @@ class Simulation(QObject):
         self.simdt = abs(dt)
         self.sysdt = int(self.simdt / self.dtmult * 1000)
 
-    def setDtMultiplier(self, mult=None):
-        if mult is not None:
-            self.dtmult = mult
-            self.sysdt = int(self.simdt / self.dtmult * 1000)
+    def setDtMultiplier(self, mult):
+        self.dtmult = mult
+        self.sysdt = int(self.simdt / self.dtmult * 1000)
 
-    def setFixdt(self, flag=None, nsec=None):
-        if flag is not None:
-            if flag:
-                self.fastforward(nsec)
-            else:
-                self.start()
+    def setFixdt(self, flag, nsec=None):
+        if flag:
+            self.fastforward(nsec)
+        else:
+            self.start()
 
     def fastforward(self, nsec=None):
         self.ffmode = True
@@ -149,32 +178,26 @@ class Simulation(QObject):
         else:
             self.ffstop = None
 
-    def datafeed(self, flag=None):
-        if flag is not None:
-            if flag:
-                self.beastfeed.connectToHost(settings.modeS_host,
-                                             settings.modeS_port)
-            else:
-                self.beastfeed.disconnectFromHost()
+    def benchmark(self, fname='IC', dt=300.0):
+        stack.ic(self.screenio, self, fname)
+        self.bencht  = 0.0  # Start time will be set at next sim cycle
+        self.benchdt = dt
 
     def scenarioInit(self, name):
-        self.reset()
-        self.screenio.echo('Starting scenario' + name)
+        self.screenio.echo('Starting scenario ' + name)
+        self.scenname = name
 
     def sendState(self):
-        self.manager.sendEvent(SimStateEvent(self.mode))
+        self.manager.sendEvent(SimStateEvent(self.state))
 
     def addNodes(self, count):
         self.manager.addNodes(count)
 
     def batch(self, filename):
         # The contents of the scenario file are meant as a batch list: send to manager and clear stack
-        self.stack.openfile(filename)
-        self.manager.sendEvent(BatchEvent(self.stack.scentime, self.stack.scencmd))
-        self.stack.scentime = []
-        self.stack.scencmd  = []
-        self.mode = Simulation.init
-        self.sendState()
+        stack.openfile(filename)
+        self.manager.sendEvent(BatchEvent(stack.scentime, stack.scencmd))
+        self.reset()
 
     def event(self, event):
         # Keep track of event processing
@@ -182,17 +205,19 @@ class Simulation(QObject):
 
         if event.type() == StackTextEventType:
             # We received a single stack command. Add it to the existing stack
-            self.stack.stack(event.cmdtext)
+            stack.stack(event.cmdtext)
             event_processed = True
 
         elif event.type() == BatchEventType:
             # We are in a batch simulation, and received an entire scenario. Assign it to the stack.
-            self.stack.scentime = event.scentime
-            self.stack.scencmd  = event.scencmd
+            self.reset()
+            stack.scentime = event.scentime
+            stack.scencmd  = event.scencmd
+            self.start()
             event_processed     = True
         elif event.type() == SimQuitEventType:
             # BlueSky is quitting
-            self.running = False
+            self.quit()
         else:
             # This is either an unknown event or a gui event.
             event_processed = self.screenio.event(event)

@@ -27,20 +27,19 @@ from ...sim.qtgl import PanZoomEvent, ACDataEvent, StackTextEvent, \
 from radarwidget import RadarWidget
 from nd import ND
 import autocomplete
-from ...settings import telnet_port
 from ...tools.misc import cmdsplit
-from ...tools.network import StackTelnetServer
 import platform
 
 is_osx = platform.system() == 'Darwin'
 
 
-usage_hints = { 'CRE' : 'acid,type,lat,lon,hdg,alt,spd',
+usage_hints = { 'BATCH': 'filename',
+                'CRE' : 'acid,type,lat,lon,hdg,alt,spd',
                 'POS' : 'acid',
                 'SSD' : 'acid/ALL/OFF',
                 'MOVE': 'acid,lat,lon,[alt],[hdg],[spd],[vspd]',
                 'DEL': 'acid',
-                'ALT': 'acid,alt',
+                'ALT': 'acid,alt,[vspd]',
                 'HDG': 'acid,hdg',
                 'SPD': 'acid,spd',
                 'NOM': 'acid',
@@ -70,7 +69,7 @@ usage_hints = { 'CRE' : 'acid,type,lat,lon,hdg,alt,spd',
                 'ND': 'acid',
                 'NAVDISP': 'acid',
                 'NOISE': 'ON/OFF',
-                'LINE': 'color,lat1,lon1,lat2,lon2',
+                'LINE': 'name,lat1,lon1,lat2,lon2',
                 'ENG': 'acid',
                 'DATAFEED': 'ON/OFF'
                 }
@@ -79,14 +78,14 @@ usage_hints = { 'CRE' : 'acid,type,lat,lon,hdg,alt,spd',
 class Gui(QApplication):
     modes = ['Init', 'Operate', 'Hold', 'End']
 
-    def __init__(self, navdb):
+    def __init__(self):
         super(Gui, self).__init__([])
-        self.telnet_in       = StackTelnetServer(self)
         self.acdata          = ACDataEvent()
-        self.navdb           = navdb
+        self.navdb           = None
         self.radarwidget     = []
         self.command_history = []
-        self.cmdargs         = []
+        self.cmd             = ''
+        self.args            = []
         self.history_pos     = 0
         self.command_mem     = ''
         self.command_line    = ''
@@ -106,9 +105,6 @@ class Gui(QApplication):
         self.splash = Splash()
         self.splash.show()
 
-        self.splash.showMessage('Constructing main window')
-        self.processEvents()
-
         # Install error message handler
         handler = QErrorMessage.qtHandler()
         handler.setWindowFlags(Qt.WindowStaysOnTopHint)
@@ -124,34 +120,35 @@ class Gui(QApplication):
             QGLFormat.setDefaultFormat(f)
             print('QGLWidget initialized for OpenGL version %d.%d' % (f.majorVersion(), f.minorVersion()))
 
-        # Create the main window and related widgets
-        self.radarwidget = RadarWidget(navdb)
-        self.win  = MainWindow(self, self.radarwidget)
-        self.nd   = ND(shareWidget=self.radarwidget)
-        # self.aman = AMANDisplay()
-
         # Enable HiDPI support (Qt5 only)
         if QT_VERSION == 5:
             self.setAttribute(Qt.AA_UseHighDpiPixmaps)
 
-        gltimer = QTimer(self)
+    def init(self, navdb):
+        self.splash.showMessage('Constructing main window')
+        self.processEvents()
+        # Create the main window and related widgets
+        self.navdb       = navdb
+        self.radarwidget = RadarWidget(navdb)
+        self.win         = MainWindow(self, self.radarwidget)
+        self.nd          = ND(shareWidget=self.radarwidget)
+        # self.aman = AMANDisplay()
+        
+
+        gltimer          = QTimer(self)
         gltimer.timeout.connect(self.radarwidget.updateGL)
         gltimer.timeout.connect(self.nd.updateGL)
         gltimer.start(50)
 
     def start(self):
         self.win.show()
-        # Start the telnet input server for stack commands
-        self.telnet_in.listen(port=telnet_port)
         self.splash.showMessage('Done!')
         self.processEvents()
         self.splash.finish(self.win)
         self.exec_()
 
-    def stop(self):
+    def quit(self):
         self.closeAllWindows()
-        print 'Stopping telnet server.'
-        self.telnet_in.close()
 
     def notify(self, receiver, event):
         # Keep track of event processing
@@ -190,12 +187,15 @@ class Gui(QApplication):
                 self.radarwidget.updatePolygon(event.name, event.data)
 
             elif event.type() == SimInfoEventType:
-                self.simt = event.simt
                 hours     = np.floor(event.simt / 3600)
                 minutes   = np.floor((event.simt - 3600 * hours) / 60)
                 seconds   = np.floor(event.simt - 3600 * hours - 60 * minutes)
-                self.win.siminfoLabel.setText('<b>sim_t</b> = %02d:%02d:%02d, <b>F</b> = %.2f Hz, <b>sim_dt</b> = %.2f, <b>n_aircraft</b> = %d, <b>mode</b> = %s'
-                    % (hours, minutes, seconds, event.sys_freq, event.simdt, event.n_ac, self.modes[event.mode]))
+                time = '%02d:%02d:%02d' % (hours, minutes, seconds)
+                self.win.setNodeInfo(manager.sender()[0], time, event.scenname)
+                if manager.sender()[0] == manager.actnode():
+                    self.simt = event.simt
+                    self.win.siminfoLabel.setText(u'<b>t:</b> %s, <b>\u0394t:</b> %.2f, <b>Speed:</b> %.1fx, <b>Mode:</b> %s, <b>Aircraft:</b> %d, <b>Conflicts:</b> %d/%d, <b>LoS:</b> %d/%d'
+                        % (time, event.simdt, event.sys_freq, self.modes[event.mode], event.n_ac, self.acdata.nconf_cur, self.acdata.nconf_tot, self.acdata.nlos_cur, self.acdata.nlos_tot))
                 return True
 
             elif event.type() == StackTextEventType:
@@ -338,7 +338,7 @@ class Gui(QApplication):
             elif (event.type() == QEvent.MouseButtonRelease or event.type() == QEvent.TouchEnd) and self.panzoomchanged:
                 self.panzoomchanged = False
                 self.sendEvent(manager.instance, PanZoomEvent(  pan=(self.radarwidget.panlat, self.radarwidget.panlon),
-                                                                  zoom=self.radarwidget.zoom, absolute=True))
+                                                                zoom=self.radarwidget.zoom, absolute=True))
 
             # If we've just processed a change to pan and/or zoom, send the event to the radarwidget
             if panzoom is not None:
@@ -361,7 +361,7 @@ class Gui(QApplication):
                     return self.radarwidget.event(PanZoomEvent(pan=(0.0, dlon)))
 
             elif event.key() == Qt.Key_Escape:
-                    manager.instance.quit()
+                    self.quit()
 
             elif event.key() == Qt.Key_Backspace:
                 self.command_line = self.command_line[:-1]
@@ -414,37 +414,36 @@ class Gui(QApplication):
 
         # Otherwise, final processing of the command line and accept the event.
         if self.command_line != self.prev_cmdline:
-            self.cmdargs = cmdsplit(self.command_line)
+            self.cmd, self.args = cmdsplit(self.command_line)
 
             hint = ''
-            if len(self.cmdargs) > 0:
-                if self.cmdargs[0] in usage_hints:
-                    hint = usage_hints[self.cmdargs[0]]
-                    if len(self.cmdargs) > 1:
-                        hintargs = hint.split(',')
-                        hint = ' ' + str.join(',', hintargs[len(self.cmdargs)-1:])
+            if self.cmd in usage_hints:
+                hint = usage_hints[self.cmd]
+                if len(self.args) > 0:
+                    hintargs = hint.split(',')
+                    hint = ' ' + str.join(',', hintargs[len(self.args):])
 
             self.win.lineEdit.setHtml('<font color="#00ff00">>>' + self.command_line + '</font><font color="#aaaaaa">' + hint + '</font>')
             self.prev_cmdline = self.command_line
 
-        if self.mousepos != self.prevmousepos and len(self.cmdargs) >= 3:
+        if self.mousepos != self.prevmousepos and len(self.args) >= 2:
             self.prevmousepos = self.mousepos
             try:
-                if self.cmdargs[0] == 'AREA':
+                if self.cmd == 'AREA':
                     data = np.zeros(4, dtype=np.float32)
                     data[0:2] = self.radarwidget.pixelCoordsToLatLon(self.mousepos[0], self.mousepos[1])
-                    data[2] = float(self.cmdargs[1])
-                    data[3] = float(self.cmdargs[2])
-                    self.radarwidget.previewpoly(self.cmdargs[0], data)
-                elif self.cmdargs[0] in ['BOX', 'POLY', 'POLYGON', 'CIRCLE', 'LINE']:
-                    data = np.zeros(len(self.cmdargs), dtype=np.float32)
-                    data[0:2] = self.radarwidget.pixelCoordsToLatLon(self.mousepos[0], self.mousepos[1])
-                    for i in range(2, len(self.cmdargs), 2):
-                        data[i]     = float(self.cmdargs[i])
-                        data[i + 1] = float(self.cmdargs[i+1])
-                    self.radarwidget.previewpoly(self.cmdargs[0], data)
+                    data[2] = float(self.args[0])
+                    data[3] = float(self.args[1])
+                    self.radarwidget.previewpoly(self.cmd, data)
+                elif self.cmd in ['BOX', 'POLY', 'POLYGON', 'CIRCLE', 'LINE']:
+                    data = np.zeros(len(self.args) + 1, dtype=np.float32)
+                    for i in range(1, len(self.args), 2):
+                        data[i-1] = float(self.args[i])
+                        data[i]   = float(self.args[i+1])
+                    data[-2:]     = self.radarwidget.pixelCoordsToLatLon(self.mousepos[0], self.mousepos[1])
+                    self.radarwidget.previewpoly(self.cmd, data)
 
-            except ValueError:
+            except:
                 pass
 
         event.accept()
@@ -457,7 +456,8 @@ class Gui(QApplication):
 
     def display_stack(self, text):
         self.win.stackText.setTextColor(QColor(0, 255, 0))
-        self.win.stackText.insertHtml('<br>' + text)
+        # self.win.stackText.insertHtml('<br>' + text)
+        self.win.stackText.append(text)
         self.win.stackText.verticalScrollBar().setValue(self.win.stackText.verticalScrollBar().maximum())
 
     def show_file_dialog(self):
