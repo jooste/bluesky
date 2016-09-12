@@ -9,6 +9,8 @@ from load_navdata_txt import load_navdata_txt
 from load_visuals_txt import load_coastline_txt
 if gui == 'qtgl':
     from load_visuals_txt import load_aptsurface_txt
+else:
+    from load_visuals_txt import pygame_load_rwythresholds
 
 
 cachedir = data_path + '/cache'
@@ -71,12 +73,14 @@ def load_navdata():
             aptdata = pickle.load(f)
             firdata = pickle.load(f)
 
-    if not gui == 'qtgl':
-        # Threshold data is not available for the PyGame version of BlueSky
-        return wptdata, aptdata, firdata, []
-
     if not os.path.isfile(cachedir + '/rwythresholds.p'):
-        load_aptsurface()
+        if gui == 'qtgl':
+            load_aptsurface()
+        else:
+            rwythresholds = pygame_load_rwythresholds()
+            with open(cachedir + '/rwythresholds.p', 'wb') as f:
+                pickle.dump(rwythresholds,  f, pickle.HIGHEST_PROTOCOL)
+
     with open(cachedir + '/rwythresholds.p', 'rb') as f:
         rwythresholds = pickle.load(f)
     return wptdata, aptdata, firdata, rwythresholds

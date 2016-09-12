@@ -23,7 +23,7 @@ def resolve(dbconf, traf):
 
     # If possible, solve conflicts once and copy results for symmetrical conflicts
     # If that is not possible, solve each conflict twice, once for each A/C
-    if not traf.ADSBtrunc and not traf.ADSBtransnoise:
+    if not traf.adsb.truncated and not traf.adsb.transnoise:
         for conflict in dbconf.conflist_now:
             
             # Determine ac indexes from callsigns
@@ -94,10 +94,7 @@ def resolve(dbconf, traf):
     dv = np.transpose(dv)
 
     # The old speed vector, cartesian coordinates
-    trkrad = np.radians(traf.hdg)
-    v      = np.array([np.sin(trkrad)*traf.tas,\
-                       np.cos(trkrad)*traf.tas,\
-                       traf.vs])
+    v = np.array([traf.gseast, traf.gsnorth, traf.vs])
 
     # The new speed vector, cartesian coordinates
     newv = dv+v
@@ -106,7 +103,7 @@ def resolve(dbconf, traf):
     # direction: horizontal or vertical or horizontal+vertical
     if dbconf.swresohoriz: # horizontal resolutions
         if dbconf.swresospd and not dbconf.swresohdg: # SPD only
-            newtrack = traf.hdg
+            newtrack = traf.trk
             newgs    = np.sqrt(newv[0,:]**2 + newv[1,:]**2)            
             newvs    = traf.vs           
         elif dbconf.swresohdg and not dbconf.swresospd: # HDG only
@@ -118,7 +115,7 @@ def resolve(dbconf, traf):
             newgs    = np.sqrt(newv[0,:]**2 + newv[1,:]**2)
             newvs    = traf.vs 
     elif dbconf.swresovert: # vertical resolutions
-        newtrack = traf.hdg
+        newtrack = traf.trk
         newgs    = traf.gs
         newvs    = newv[2,:]       
     else: # horizontal + vertical
@@ -133,9 +130,9 @@ def resolve(dbconf, traf):
     vscapped = np.maximum(dbconf.vsmin,np.minimum(dbconf.vsmax,newvs))
     
     # Now assign resolutions to variables in the ASAS class
-    dbconf.asashdg = newtrack
-    dbconf.asasspd = newgscapped
-    dbconf.asasvsp = vscapped
+    dbconf.trk = newtrack
+    dbconf.spd = newgscapped
+    dbconf.vs  = vscapped
     
     # To update asasalt, tinconf is used. tinconf is a really big value if there is 
     # no conflict. If there is a conflict, tinconf will be between 0 and the lookahead
@@ -143,14 +140,14 @@ def resolve(dbconf, traf):
     # tinconf that is between 0 and the lookahead time (i.e., for the ones that are 
     # in conflict). This is what the following code does:
     altCondition = dbconf.tinconf.min(axis=1) < dbconf.dtlookahead
-    asasalttemp  = dbconf.asasvsp*dbconf.tinconf.min(axis=1) + traf.alt
-    dbconf.asasalt[altCondition] = asasalttemp[altCondition]
+    asasalttemp  = dbconf.vs*dbconf.tinconf.min(axis=1) + traf.alt
+    dbconf.alt[altCondition] = asasalttemp[altCondition]
     
     # If resolutions are limited in the horizontal direction, then asasalt should
     # be equal to auto pilot alt (aalt). This is to prevent a new asasalt being computed 
     # using the auto pilot vertical speed (traf.avs) using the code in line 106 (asasalttemp) when only
     # horizontal resolutions are allowed.
-    dbconf.asasalt = dbconf.asasalt*(1-dbconf.swresohoriz) + traf.apalt*dbconf.swresohoriz
+    dbconf.alt = dbconf.alt*(1-dbconf.swresohoriz) + traf.apalt*dbconf.swresohoriz
     
            
 #=================================== Modified Voltage Potential ===============
@@ -170,14 +167,10 @@ def MVP(traf, dbconf, id1, id2):
     drel = np.array([np.sin(qdr)*dist, \
                 np.cos(qdr)*dist, \
                 traf.alt[id2]-traf.alt[id1]])
-
-    # Find track of id1 and id2 in radians
-    t1 = np.radians(traf.hdg[id1])
-    t2 = np.radians(traf.hdg[id2])
-        
+       
     # Write velocities as vectors and find relative velocity vector              
-    v1 = np.array([np.sin(t1)*traf.tas[id1],np.cos(t1)*traf.tas[id1],traf.vs[id1]])
-    v2 = np.array([np.sin(t2)*traf.tas[id2],np.cos(t2)*traf.tas[id2],traf.vs[id2]])
+    v1 = np.array([traf.gseast[id1], traf.gsnorth[id1], traf.vs[id1]])
+    v2 = np.array([traf.gseast[id2], traf.gsnorth[id2], traf.vs[id2]])
     vrel = np.array(v2-v1) 
     
     # Find tcpa (or should it be tinconf, since tinconf decided whether its a conflict?)

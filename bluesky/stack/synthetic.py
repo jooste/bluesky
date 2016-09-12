@@ -1,10 +1,8 @@
-import sys
-sys.path.append('bluesky/tools/')
 import random
 import numpy as np
-from aero import ft, eas2tas
-import geo
-from misc import txt2alt, txt2spd
+from ..tools.aero import ft, eas2tas
+from ..tools import geo
+from ..tools.misc import txt2alt, txt2spd
 '''
     Original version by Jerom Maas, fall 2014
     Adapted and expanded by Pieter Danneels, fall 2015
@@ -12,12 +10,9 @@ from misc import txt2alt, txt2spd
 
 savescenarios=False #whether to save a scenario as .scn file after generation via commands
 
-def process(command, numargs, cmdargs, sim, traf, scr, cmd):
-    # First, find by which callsign the CFreeFlight module is called in Cstack.py
-    for sign,filename in cmd.extracmdmodules.iteritems():
-        if filename==__name__:
-            callsign = sign
-    
+def process(command, numargs, cmdargs, sim, traf, scr):
+    callsign = 'SYN_'
+
     # change display settings and delete AC to generate own FF scenarios
     if command == "START":
         scr.swgeo=False         #don't draw coastlines and borders
@@ -32,41 +27,43 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
         scr.swsep = True        #show circles of seperation between ac
         scr.swspd = True        #show speed vectors of aircraft
         scr.zoom(0.4, True)     #set zoom level to the standard distance
-        cmd.scenlines=[]        #skip the rest of the scenario
-        cmd.scencmd=[]          #skip the rest of the scenario
-        cmd.scentime=[]         #skip the rest of the scenario
-        #cmd.scenlines.append("00:00:00.00>"+callsign+"TESTCIRCLE")
-        #cmd.scenlines.append("00:00:00.00>DT 1")
-        #cmd.scenlines.append("00:00:00.00>FIXDT ON")
+        # cmd.scenlines=[]        #skip the rest of the scenario
+        # cmd.scencmd=[]          #skip the rest of the scenario
+        # cmd.scentime=[]         #skip the rest of the scenario
+        cmd.scenlines.append("00:00:00.00>"+callsign+"TESTCIRCLE")
+        cmd.scenlines.append("00:00:00.00>DT 1")
+        cmd.scenlines.append("00:00:00.00>FIXDT ON")
         sim.mode=sim.init
         sim.reset()
         
     # display help    
     elif command == "HELP":
-        scr.echo("This is the synthetic traffic scenario module")
-        scr.echo("Possible subcommands: HELP, SIMPLE, SIMPLED, DIFG, SUPER, SPHERE, MATRIX, FLOOR, TAKEOVER, WALL, ROW, COLUMN, DISP")
-    
+        return True, ("This is the synthetic traffic scenario module\n"
+            "Possible subcommands: HELP, SIMPLE, SIMPLED, DIFG, SUPER, SPHERE, "
+            "MATRIX, FLOOR, TAKEOVER, WALL, ROW, COLUMN, DISP")
+
     #create a perpendicular conflict between two aircraft
     elif command == "SIMPLE":
-        scr.isoalt=0
+        scr.isoalt = 0
         traf.reset(sim.navdb)
-        traf.create("OWNSHIP", "GENERIC", -.5, 0, 0, 5000*ft, 200)
-        traf.create("INTRUDER", "GENERIC", 0, .5, 270, 5000*ft, 200)
-        
+        traf.create("OWNSHIP", "GENERIC", -.5, 0, 0, 5000 * ft, 200)
+        traf.create("INTRUDER", "GENERIC", 0, .5, 270, 5000 * ft, 200)
+        return True
+
     #create a perpendicular conflict with slight deviations to aircraft speeds and places
     elif command == "SIMPLED":
-        scr.isoalt=0
+        scr.isoalt = 0
         traf.reset(sim.navdb)
-        ds=random.uniform(0.92,1.08)
-        dd=random.uniform(0.92,1.08)
-        traf.create("OWNSHIP", "GENERIC", -.5*dd, 0, 0, 20000*ft, 200*ds)
-        traf.create("INTRUDER", "GENERIC", 0, .5/dd, 270, 20000*ft, 200/ds)   
-     
-    
+        ds = random.uniform(0.92, 1.08)
+        dd = random.uniform(0.92, 1.08)
+        traf.create("OWNSHIP", "GENERIC", -.5 * dd, 0, 0, 20000 * ft, 200 * ds)
+        traf.create("INTRUDER", "GENERIC", 0, .5 / dd, 270, 20000 * ft, 200 / ds)
+        return True
+
     # used for testing the differential game resolution method
     elif command == "DIFG":
-        if numargs<5:
-            scr.echo("5 ARGUMENTS REQUIRED")
+        if numargs < 5:
+            return False, "5 ARGUMENTS REQUIRED"
         else:
             scr.isoalt=0
             traf.reset(sim.navdb)
@@ -77,12 +74,12 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
             phi=np.degrees(traf.asas.phi[int(float(cmdargs[5]))])
             traf.create("OWN", "GENERIC", 0, 0, 0, 5000*ft, v_o)
             traf.create("WRN", "GENERIC", y, x, phi, 5000*ft, v_w)
-    
-    
+            return True
+
     # create a superconflict of x aircraft in a circle towards the center
     elif command == "SUPER":
         if numargs ==0:
-            scr.echo(callsign+"SUPER <NUMBER OF A/C>")
+            return True, callsign+"SUPER <NUMBER OF A/C>"
         else:
             scr.isoalt=0
             traf.reset(sim.navdb)
@@ -97,13 +94,13 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
                     distance * np.sin(angle), 360.0 - 360.0 / numac * i, alt, spd)
             if savescenarios:
                 fname="super"+str(numac)
-                cmd.saveic(fname,sim,traf)
+                # cmd.saveic(fname,sim,traf)
+            return True
 
-    
     # create a sphereconflict of 3 layers of superconflicts
     elif command == "SPHERE":
         if numargs ==0:
-            scr.echo(callsign+"SPHERE <NUMBER OF A/C PER LAYER>")
+            return True, callsign+"SPHERE <NUMBER OF A/C PER LAYER>"
         else:
             scr.isoalt=1./200
             traf.reset(sim.navdb)
@@ -151,12 +148,48 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
                 
             if savescenarios:
                 fname="sphere"+str(numac)
+                # cmd.saveic(fname,sim,traf)
+            return True
+
+    elif command == "FUNNEL":
+        if numargs ==0:
+            scr.echo(callsign+"FUNNEL <FUNNELSIZE IN NUMBER OF A/C>")
+        else:
+            scr.isoalt=0
+            traf.deleteall()
+            traf.asas=CASASfunnel.Dbconf(traf,300., 5.*nm, 1000.*ft)
+            size=float(commandargs[1])
+            mperdeg=111319.
+            distance=0.90 #this is in degrees lat/lon, for now
+            alt=20000 #meters
+            spd=200 #kts
+            numac=8 #number of aircraft
+            for i in range(numac):
+                angle=np.pi/2/numac*i+np.pi/4
+                acid="SUP"+str(i)
+                traf.create(acid,"SUPER",distance*-np.cos(angle),distance*-np.sin(angle),90,alt,spd)             
+                
+            separation=traf.asas.R*1.01 #[m] the factor 1.01 is so that the funnel doesn't collide with itself
+            sepdeg=separation/np.sqrt(2.)/mperdeg #[deg]
+            
+            for row in range(1):
+                for col in range(15):
+                    opening=(size+1)/2.*separation/mperdeg
+                    Coldeg=sepdeg*col  #[deg]
+                    Rowdeg=sepdeg*row  #[deg]
+                    acid1="FUNN"+str(row)+"-"+str(col)
+                    acid2="FUNL"+str(row)+"-"+str(col)
+                    traf.create(acid1,"FUNNEL", Coldeg+Rowdeg+opening,-Coldeg+Rowdeg+0.5,0,alt,0)             
+                    traf.create(acid2,"FUNNEL",-Coldeg-Rowdeg-opening,-Coldeg+Rowdeg+0.5,0,alt,0)
+                    
+            if savescenarios:
+                fname="funnel"+str(size)
                 cmd.saveic(fname,sim,traf)
-             
+
     # create a conflict with several aircraft flying in a matrix formation    
     elif command == "MATRIX":
         if numargs ==0:
-            scr.echo(callsign+"MATRIX <SIZE>")
+            return True, callsign+"MATRIX <SIZE>"
         else:
             size=int(float(cmdargs[1]))
             scr.isoalt=0
@@ -180,7 +213,8 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
                 
             if savescenarios:
                 fname="matrix"+str(size)
-                cmd.saveic(fname,sim,traf)
+                # cmd.saveic(fname,sim,traf)
+            return True
 
     # create a conflict with several aircraft flying in a floor formation    
     elif command == "FLOOR":
@@ -200,12 +234,13 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
             traf.create(acid,"FLOOR",-1,(i-10)*hseplat,90,20000*ft,200)            
         if savescenarios:
             fname="floor"
-            cmd.saveic(fname,sim,traf)            
+            # cmd.saveic(fname,sim,traf)            
+        return True
 
     # create a conflict with several aircraft overtaking eachother    
     elif command == "TAKEOVER":
         if numargs ==0:
-            scr.echo(callsign+"TAKEOVER <NUMBER OF A/C>")
+            return True, callsign+"TAKEOVER <NUMBER OF A/C>"
         else:
             numac=int(float(cmdargs[1]))
             scr.isoalt=0
@@ -219,7 +254,8 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
                 traf.create(acid,"OT",0,-degtofly,90,20000*ft,v)
             if savescenarios:
                 fname="takeover"+str(numac)
-                cmd.saveic(fname,sim,traf)
+                # cmd.saveic(fname,sim,traf)
+            return True
 
     # create a conflict with several aircraft flying in a wall formation    
     elif command == "WALL":
@@ -236,13 +272,14 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
             traf.create(acid,"WALL",(i-10)*hseplat*wallsep,distance,270,20000*ft,200)
         if savescenarios:
             fname="wall"
-            cmd.saveic(fname,sim,traf)
-    
+            # cmd.saveic(fname,sim,traf)
+        return True
+
     # create a conflict with several aircraft flying in two rows angled towards each other
     elif command == "ROW":
         commandhelp = "SYN_ROW n angle [-r=radius in NM] [-a=alt in ft] [-s=speed EAS in kts] [-t=actype]"
         if numargs == 0:
-            scr.echo(commandhelp)
+            return True, commandhelp
         else:
             try:
                 traf.reset(sim.navdb) # start fresh
@@ -270,18 +307,17 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
                     alternate = alternate * -1   
                     
                 scr.pan([0,0],True)
+                return True
             except Exception:
-                scr.echo('Syntax error: unknown argument flag')
+                return False, 'unknown argument flag'
             except:
-                scr.echo('Syntax error')
-                scr.echo(commandhelp) 
-                
+                return False, commandhelp
 
     # create a conflict with several aircraft flying in two columns angled towards each other
     elif command == "COLUMN":
         commandhelp = "SYN_COLUMN n angle [-r=radius in NM] [-a=alt in ft] [-s=speed EAS in kts] [-t=actype]"
         if numargs == 0:
-            scr.echo(commandhelp)
+            return True, commandhelp
         else:
             try:
                 traf.reset(sim.navdb) # start fresh
@@ -310,19 +346,18 @@ def process(command, numargs, cmdargs, sim, traf, scr, cmd):
                     traf.create("ANG"+str(i*2+1), actype, aclat, -aclon, 180-ang, acalt*ft, acspd)  
 
                 scr.pan([0,0],True)
+                return True
             except Exception:
-                scr.echo('Syntax error: unknown argument flag')
+                return False, 'unknown argument flag'
             except:
-                scr.echo('Syntax error')
-                scr.echo(commandhelp)      
-                   
+                return False, commandhelp
+
     #give up
     else:
-        scr.echo("Unknown command: " + callsign + command)
-#    pass
+        return False, "Unknown command: " + callsign + command
+
 
 class angledtraffic():
-    
     @staticmethod        
     def arguments(numargs, cmdargs): 
         syntaxerror = False        

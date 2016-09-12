@@ -103,7 +103,7 @@ class ScreenIO(QObject):
                 self.ctrlon -= 0.5
             elif args[0] == "RIGHT":
                 self.ctrlon += 0.5
-            elif args[0] == "UP":
+            elif args[0] == "UP" or args[0]== "ABOVE":
                 self.ctrlat += 0.5
             elif args[0] == "DOWN":
                 self.ctrlat -= 0.5
@@ -143,18 +143,16 @@ class ScreenIO(QObject):
         if data_in is None:
             # This is an object delete event
             data = None
-        elif objtype == 1 or objtype == 4:
-            # LINE(1) or POLY(4)
+        elif objtype == 'LINE' or objtype[:4] == 'POLY':
             data = np.array(data_in, dtype=np.float32)
-        elif objtype == 2:
+        elif objtype == 'BOX':
             # BOX
             data = np.array([data_in[0], data_in[1],
                              data_in[0], data_in[3],
                              data_in[2], data_in[3],
                              data_in[2], data_in[1]], dtype=np.float32)
 
-        elif objtype == 3:
-            # CIRCLE
+        elif objtype == 'CIRCLE':
             # parameters
             Rearth = 6371000.0             # radius of the Earth [m]
             numPoints = 72                 # number of straight line segments that make up the circrle
@@ -237,7 +235,7 @@ class ScreenIO(QObject):
             data.acid          = self.route_acid
             idx   = self.sim.traf.id2idx(self.route_acid)
             if idx >= 0:
-                route          = self.sim.traf.route[idx]
+                route          = self.sim.traf.fms.route[idx]
                 data.iactwp    = route.iactwp
 
                 # We also need the corresponding aircraft position

@@ -19,12 +19,15 @@ from math import *
 import numpy as np
 from random import seed
 import os
-import sys
 
-from ..tools import geo
+from ..tools import geo, areafilter
 from ..tools.aero import kts, ft, fpm, tas2cas, density
-from ..tools.misc import txt2alt, cmdsplit, txt2lat, txt2lon
+from ..tools.misc import txt2alt, cmdsplit
+from ..tools.position import txt2pos, islat
 from .. import settings
+
+# Temporary fix for synthetic
+import synthetic as syn
 
 # Global variables
 cmddict   = dict()
@@ -35,31 +38,8 @@ scenfile  = ""
 scentime  = []
 scencmd   = []
 
-
-# ------------------ [start] Deprecated -------------------
-# An alternative way to add your own commands:
-# add your entry to the dictionary.
-# The dictionary should be formed as {"Key":module'}.
-
-# "Key" is a FOUR-symbol reference used at the start of command.
-# 'module' is the name of the .py-file in which the
-# commands are located (without .py).
-
-# Make sure that the module has a function "process" with
-# arguments:
-#   command, number of args, array of args, sim, traf, scr, cmd
-
-extracmdmodules = {
-    "SYN_": 'synthetic'
-}
-
-# Import modules from the list
-extracmdrefs = {}
-sys.path.append('bluesky/stack/')
-for key in extracmdmodules:
-    obj=__import__(extracmdmodules[key],globals(),locals(),[],0)
-    extracmdrefs[key]=obj
-# ------------------ [end] Deprecated -------------------
+reflat    = -999.  # Reference latitude for searching in nav db in case of duplicate names
+reflon    = -999.  # Reference longitude for searching in nav db in case of duplicate names
 
 
 def init(sim, traf, scr):
@@ -77,23 +57,23 @@ def init(sim, traf, scr):
             sim.addNodes],
         "ADDWPT": [
             "ADDWPT acid, (wpname/lat,lon),[alt],[spd],[afterwp]",
-            "acid,pos/txt,[alt,spd,txt]",
+            "acid,wpt,[alt,spd,txt]",
             # lambda: short-hand for using function output as argument, equivalent with:
             #
             # def fun(idx, args):
-            #     return traf.route[idx].addwptStack(traf, idx, *args)
+            #     return traf.fms.route[idx].addwptStack(traf, idx, *args)
             # fun(idx,*args)
-            lambda idx, *args: traf.route[idx].addwptStack(traf, idx, *args)
+            lambda idx, *args: traf.fms.route[idx].addwptStack(traf, idx, *args)
         ],
         "ALT": [
             "ALT acid, alt, [vspd]",
             "acid,alt,[vspd]",
-            traf.selalt
+            traf.fms.selalt
         ],
         "AREA": [
             "AREA OFF, or\nlat0,lon0,lat1,lon1[,lowalt]\nor\nAREA FIR,radius[,lowalt]\nor\nAREA CIRCLE,lat0,lon0,radius[,lowalt]",
             "float/txt,float,[float,float,float]",
-            lambda *args: traf.setArea(scr, sim.metric, *args)
+            lambda *args: traf.area.SetArea(scr, sim.metric, *args)
         ],
         "ASAS": [
             "ASAS ON/OFF",
@@ -110,9 +90,9 @@ def init(sim, traf, scr):
             sim.benchmark
         ],
         "BOX": [
-            "BOX name,lat,lon,lat,lon",
-            "txt,latlon,latlon",
-            lambda name, *coords: scr.objappend(2, name, coords)
+            "BOX name,lat,lon,lat,lon,[top,bottom]",
+            "txt,latlon,latlon,[alt,alt]",
+            lambda name, *coords: areafilter.defineArea(scr, name, 'BOX', coords)
         ],
         "CALC": [
             "CALC expression",
@@ -125,13 +105,13 @@ def init(sim, traf, scr):
             traf.asas.SetCDmethod
         ],
         "CIRCLE": [
-            "CIRCLE name,lat,lon,radius",
-            "txt,latlon,float",
-            lambda name, *coords: scr.objappend(3, name, coords)
+            "CIRCLE name,lat,lon,radius,[top,bottom]",
+            "txt,latlon,float,[alt,alt]",
+            lambda name, *coords: areafilter.defineArea(scr, name, 'CIRCLE', coords)
         ],
         "CRE": [
             "CRE acid,type,lat,lon,hdg,alt,spd",
-            "txt,txt,pos,hdg,alt,spd",
+            "txt,txt,latlon,hdg,alt,spd",
             traf.create
         ],
         "DEL": [
@@ -139,22 +119,22 @@ def init(sim, traf, scr):
             "txt",
             lambda a:   traf.delete(a)    if traf.id.count(a) > 0 \
                    else traf.wind.clear() if a=="WIND" \
-                   else scr.objappend(0, a, None)
+                   else areafilter.deleteArea(scr, a)
         ],
         "DELWPT": [
             "DELWPT acid,wpname",
             "acid,txt",
-            lambda idx, wpname: traf.route[idx].delwpt(wpname)
+            lambda idx, wpname: traf.fms.route[idx].delwpt(wpname)
         ],
         "DEST": [
             "DEST acid, latlon/airport",
-            "acid,pos",
-            lambda idx, *args: traf.setDestOrig("DEST", idx, *args)
+            "acid,wpt/latlon",
+            lambda idx, *args: traf.fms.setdestorig("DEST", idx, *args)
         ],
         "DIRECT": [
             "DIRECT acid wpname",
             "acid,txt",
-            lambda idx, wpname: traf.route[idx].direct(traf, idx, wpname)
+            lambda idx, wpname: traf.fms.route[idx].direct(traf, idx, wpname)
         ],
         "DIST": [
             "DIST lat0, lon0, lat1, lon1",
@@ -184,7 +164,7 @@ def init(sim, traf, scr):
         "DUMPRTE": [
             "DUMPRTE acid",
             "acid",
-            lambda idx: traf.route[idx].dumpRoute(traf, idx)
+            lambda idx: traf.fms.route[idx].dumpRoute(traf, idx)
         ],
         "ECHO": [
             "ECHO txt",
@@ -214,7 +194,7 @@ def init(sim, traf, scr):
         "HDG": [
             "HDG acid,hdg (deg,True)",
             "acid,float",
-            traf.selhdg
+            traf.fms.selhdg
         ],
         "HELP": [
             "HELP [command]",
@@ -244,12 +224,12 @@ def init(sim, traf, scr):
         "LISTRTE": [
             "LISTRTE acid, [pagenr]",
             "acid,[int]",
-            lambda idx, *args: traf.route[idx].listrte(scr, idx, traf, *args)
+            lambda idx, *args: traf.fms.route[idx].listrte(scr, idx, traf, *args)
         ],
         "LNAV": [
             "LNAV acid,[ON/OFF]",
             "acid,[onoff]",
-            traf.setLNAV
+            traf.fms.setLNAV
         ],
         "MCRE": [
             "MCRE n, [type/*, alt/*, spd/*, dest/*]",
@@ -293,12 +273,12 @@ def init(sim, traf, scr):
         ],
         "ORIG": [
             "ORIG acid, latlon/airport",
-            "acid,pos",
-            lambda *args: traf.setDestOrig("ORIG", *args)
+            "acid,wpt/latlon",
+            lambda *args: traf.fms.setdestorig("ORIG", *args)
         ],
         "PAN": [
-            "PAN latlon/acid/airport/waypoint",
-            "pos/txt",
+            "PAN latlon/acid/airport/waypoint/LEFT/RIGHT/ABOVE/DOWN",
+            "latlon/txt",
             scr.pan
         ],
         "PCALL": [
@@ -310,7 +290,12 @@ def init(sim, traf, scr):
         "POLY": [
             "POLY name,lat,lon,lat,lon, ...",
             "txt,latlon,...",
-            lambda name, *coords: scr.objappend(4, name, coords)
+            lambda name, *coords: areafilter.defineArea(scr, name, 'POLY', coords)
+        ],
+        "POLYALT": [
+            "POLY name,top,bottom,lat,lon,lat,lon, ...",
+            "txt,alt,alt,latlon,...",
+            lambda name, *coords: areafilter.defineArea(scr, name, 'POLYALT', coords)
         ],
         "POS": [
             "POS acid",
@@ -389,7 +374,7 @@ def init(sim, traf, scr):
         "SPD": [
             "SPD acid,spd (CAS-kts/Mach)",
             "acid,spd",
-            traf.selspd
+            traf.fms.selspd
         ],
         "SSD": [
             "SSD acid/ALL/OFF",
@@ -411,25 +396,31 @@ def init(sim, traf, scr):
             "",
             scr.symbol
         ],
+        "SYN": [
+            " SYN: Possible subcommands: HELP, SIMPLE, SIMPLED, DIFG, SUPER,\n" + \
+            "MATRIX, FLOOR, TAKEOVER, WALL, ROW, COLUMN, DISP",
+            "txt,[...]",
+            lambda *args: syn.process(args[0], len(args) - 1, args, sim, traf, scr)
+        ],
         "TAXI": [
             "TAXI ON/OFF : OFF auto deletes traffic below 1500 ft",
             "onoff",
-            traf.setTaxi
+            traf.area.setTaxi
         ],
         "TRAIL": [
             "TRAIL ON/OFF, [dt] OR TRAIL acid color",
             "acid/bool,[float/txt]",
-            traf.setTrails
+            traf.trails.setTrails
         ],
         "VNAV": [
             "VNAV acid,[ON/OFF]",
             "acid,[onoff]",
-            traf.setVNAV
+            traf.fms.setVNAV
         ],
         "VS": [
             "VS acid,vspd (ft/min)",
             "acid,vspd",
-            traf.selvspd
+            traf.fms.selvspd
         ],
         "WIND": [
             "WIND lat,lon,alt/*,dir,spd[,alt,dir,spd,alt,...]",
@@ -568,8 +559,8 @@ def openfile(scenname, absrel='ABS', mergeWithExisting=False):
     if scenname.find("/") < 0 and scenname.find( "\\") < 0:
         scenfile = settings.scenario_path
         if scenfile[-1] is not '/':
-            scenfile += '/'
-        scenfile += scenname
+            scenfile = scenfile + '/'
+        scenfile = scenfile+scenname
     else:
         scenfile = scenname
 
@@ -596,7 +587,7 @@ def openfile(scenname, absrel='ABS', mergeWithExisting=False):
                     imin = int(ttxt[1]) * 60.0
                     xsec = float(ttxt[2])
                     scentime.append(ihr + imin + xsec + t_offset)
-                    scencmd.append(line[icmdline + 1:-1])
+                    scencmd.append(line[icmdline + 1:].strip("\n"))
                 except:
                     if not(len(line.strip())>0 and line.strip()[0]=="#"):                        
                         print "except this:", line
@@ -695,14 +686,13 @@ def saveic(fname, sim, traf):
             f.write(timtxt + cmdline + chr(13) + chr(10))
 
         # DEST acid,dest-apt
-        if traf.dest[i] != "":
-            cmdline = "DEST " + traf.id[i] + "," + traf.dest[i]
+        if traf.fms.dest[i] != "":
+            cmdline = "DEST " + traf.id[i] + "," + traf.fms.dest[i]
             f.write(timtxt + cmdline + chr(13) + chr(10))
 
         # ORIG acid,orig-apt
-        if traf.orig[i] != "":
-            cmdline = "ORIG " + traf.id[i] + "," + \
-                      traf.orig[i]
+        if traf.fms.orig[i] != "":
+            cmdline = "ORIG " + traf.id[i] + "," + traf.fms.orig[i]
             f.write(timtxt + cmdline + chr(13) + chr(10))
 
     # Saveic: should close
@@ -716,6 +706,7 @@ def process(sim, traf, scr):
 
     # Process stack of commands
     for line in cmdstack:
+#debug        print "stack is processing:",line
         # Empty line: next command
         line = line.strip()
         if len(line) == 0:
@@ -777,7 +768,8 @@ def process(sim, traf, scr):
                         curtype = curtype - repeatsize
                     argtype    = argtypes[curtype].strip().split('/')
                     for i in range(len(argtype)):
-                        try:
+                        if True:                                # use for debugging argparsing
+#                        try:    
                             argtypei = argtype[i]
                             parsed_arg, opt_arg, argstep = argparse(argtypei, curarg, args, traf, scr)
                             if parsed_arg[0] is None and argtypei in optargs:
@@ -787,7 +779,8 @@ def process(sim, traf, scr):
                             optargs.update(opt_arg)
                             curarg  += argstep
                             break
-                        except:
+                        else:
+#                        except:                                 # use for debugging argparsing
                             # not yet last type possible here?
                             if i < len(argtype) - 1:
                                 # We have alternative argument formats that we can try
@@ -808,7 +801,7 @@ def process(sim, traf, scr):
                 if type(results) == bool:  # Only flag is returned
                     synerr = not results
                     if synerr:
-                        if numargs <= 0 or args[curarg] == "?":
+                        if numargs <= 0 or curarg<len(args) and args[curarg] == "?":
                             scr.echo(helptext)
                         else:
                             scr.echo("Syntax error: " + helptext)
@@ -838,8 +831,8 @@ def process(sim, traf, scr):
         # Reference to other command files
         # Check external references
         #-------------------------------------------------------------------
-        elif cmd[:4] in extracmdrefs:
-            extracmdrefs[cmd[:4]].process(cmd[4:], numargs, [cmd] + args, sim, traf, scr, self)
+#        elif cmd[:4] in extracmdrefs:
+#            extracmdrefs[cmd[:4]].process(cmd[4:], numargs, [cmd] + args, sim, traf, scr, self)
 
         #-------------------------------------------------------------------
         # Command not found
@@ -860,82 +853,131 @@ def process(sim, traf, scr):
 
 
 def argparse(argtype, argidx, args, traf, scr):
+    global reflat, reflon
+    
     """ Parse one or more arguments.
 
         Returns:
         - A list with the parse results
         - The number of arguments parsed
-        - A dict with additional optional parsed arguments. """
+        - A dict with additional optional parsed arguments. 
+        As different ype can be tried, raise error if syntax not ok"""
+        
     if args[argidx] == "" or args[argidx] == "*":  # Empty arg or wildcard => parse None
         return [None], {}, 1
 
-    if argtype == "acid":  # aircraft id => parse index
+    elif argtype == "acid":  # aircraft id => parse index
         idx = traf.id2idx(args[argidx])
         if idx < 0:
             scr.echo(cmd + ":" + args[idx] + " not found")
             raise IndexError
         else:
+            reflat,reflon = traf.lat[idx],traf.lon[idx] # Update ref position for navdb lookup
             return [idx], {}, 1
 
-    if argtype == "txt":  # simple text
+    elif argtype == "txt":  # simple text
         return [args[argidx]], {}, 1
 
-    if argtype == "float":  # float number
+    elif argtype == "float":  # float number
         return [float(args[argidx])], {}, 1
 
-    if argtype == "int":   # integer
+    elif argtype == "int":   # integer
         return [int(args[argidx])], {}, 1
 
-    if argtype == "onoff" or argtype == "bool":
+    elif argtype == "onoff" or argtype == "bool":
         sw = (args[argidx] == "ON" or
               args[argidx] == "1" or args[argidx] == "TRUE")
         return [sw], {}, 1
 
-    if argtype == "pos":
-        # Arg is an existing aircraft?
-        idx = traf.id2idx(args[argidx])
-        if idx >= 0:
-            return [traf.lat[idx], traf.lon[idx]], {}, 1
-        # Arg is an airport?
-        idx = traf.navdb.getapidx(args[argidx])
-        if idx >= 0:
-            # Next arg is a runway?
-            if len(args) > argidx + 1 and args[argidx] in traf.navdb.rwythresholds and \
-                    args[argidx + 1] in traf.navdb.rwythresholds[args[argidx]]:
-                arglist = traf.navdb.rwythresholds[args[argidx]][args[argidx + 1]][:2]
-                optargs = {"hdg": [traf.navdb.rwythresholds[args[argidx]][args[argidx + 1]][2]]}
-                return arglist, optargs, 2
+    elif argtype=="wpt" or argtype =="latlon":
 
-            # If no runway return airport center
-            return [traf.navdb.aplat[idx], traf.navdb.aplon[idx]], {}, 1
-        # Arg is a waypoint?
-        idx = traf.navdb.getwpidx(args[argidx])
-        if idx >= 0:
-            return [traf.navdb.wplat[idx], traf.navdb.wplon[idx]], {}, 1
-        # Arg, next arg are a lat/lon combination
-        return [txt2lat(args[argidx]), txt2lon(args[argidx + 1])], {}, 2
+        # wpt: Make 1 or 2 argument(s) into 1 position text to be used as waypoint
+        # latlon: return lat,lon to be used as a position only
 
-    if argtype == "latlon":
-        return [txt2lat(args[argidx]), txt2lon(args[argidx + 1])], {}, 2
+        # Examples valid position texts:
+        # lat/lon : "N52.12,E004.23","N52'14'12',E004'23'10"
+        # navaid/fix: "SPY","OA","SUGOL"
+        # airport:   "EHAM"
+        # runway:    "EHAM/RW06" "LFPG/RWY23"    
 
-    if argtype == "spd":  # CAS[kts] Mach
+        # Set default lat,lon to screen
+        if reflat<180.: # No reference avaiable yet: use screen center
+            reflat,reflon = scr.ctrlat,scr.ctrlon
+
+        optargs= {}
+
+        # If last argument, no lat,lom or airport,runway so simply return this argument
+        if len(args)-1 == argidx:
+            
+            # translate a/c id into a valid position text with a lat,lon
+            if traf.id2idx(args[argidx])>=0:
+                idx  = traf.id2idx(args[argidx])
+                name = str(traf.lat[idx])+","+str(traf.lon[idx])
+            else:
+                name = args[argidx]
+            nusedargs = 1  # we used one argument
+
+        # Check occasionally also next arg
+        else:
+            # lat,lon ? Combine into one string with a comma
+            if islat(args[argidx]):
+                name = args[argidx]+","+args[argidx+1]
+                nusedargs = 2   # we used two arguments               
+
+            # apt,runway ? Combine into one string with a slash as separator
+            elif args[argidx+1][:2].upper() == "RW" and traf.navdb.apid.count(args[argidx])>0:
+                name = args[argidx]+"/"+args[argidx+1]
+                nusedargs = 2   # we used two arguments               
+
+            # aircraft id? convert to lat/lon string
+            elif traf.id2idx(argidx)>=0:
+                idx = traf.id2idx(args[argidx])
+                name = str(traf.lat[idx])+","+str(traf.lon[idx])
+                nusedargs = 1
+
+            # In other cases parse string as position
+            else:
+                name = args[argidx]
+                nusedargs = 1  # we used one argument
+
+        # Return something different for the two argtypes:
+
+        # for wpt argument type, simply return positiontext, no need it look up nw
+        if argtype == "wpt":
+            return [name], optargs, nusedargs
+
+        # for lat/lon argument type we also need to it up:
+        elif argtype == "latlon":
+            posobj = txt2pos(name,traf,traf.navdb,reflat,reflon)
+
+            # for runway type, get heading as default optional argument for command line
+            if posobj.type=="rwy":
+                rwyname = args[argidx +1].strip("RW").strip("Y").strip().upper() # remove RW or RWY and spaces
+                optargs = {"hdg": [traf.navdb.rwythresholds[args[argidx]][rwyname][2]]}
+
+            reflat,reflon = posobj.lat,posobj.lon
+            
+            return [posobj.lat , posobj.lon],optargs,nusedargs
+       
+
+    elif argtype == "spd":  # CAS[kts] Mach
         spd = float(args[argidx].upper().replace("M", ".").replace("..", "."))
         if not 0.1 < spd < 1.0:
             spd *= kts
         return [spd], {}, 1  # speed CAS[m/s] or Mach (float)
 
-    if argtype == "vspd":
+    elif argtype == "vspd":
         return [fpm * float(args[argidx])], {}, 1
 
-    if argtype == "alt":  # alt: FL250 or 25000 [ft]
+    elif argtype == "alt":  # alt: FL250 or 25000 [ft]
         return [ft * txt2alt(args[argidx])], {}, 1  # alt in m
 
-    if argtype == "hdg":
+    elif argtype == "hdg":
         # TODO: for now no difference between magnetic/true heading
         hdg = float(args[argidx].upper().replace('T', '').replace('M', ''))
         return [hdg], {}, 1
 
-    if argtype == "time":
+    elif argtype == "time":
         ttxt = args[argidx].strip().split(':')
         if len(ttxt) >= 3:
             ihr  = int(ttxt[0]) * 3600.0
@@ -944,3 +986,6 @@ def argparse(argtype, argidx, args, traf, scr):
             return [ihr + imin + xsec], {}, 1
         else:
             return [float(args[argidx])], {}, 1
+
+    return
+    
