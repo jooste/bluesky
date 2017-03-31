@@ -9,6 +9,7 @@ import numpy as np
 import time
 
 # Local imports
+from ... import stack
 from timer import Timer
 from simevents import ACDataEvent, RouteDataEvent, PanZoomEvent, \
                         SimInfoEvent, StackTextEvent, ShowDialogEvent, DisplayFlagEvent, \
@@ -70,6 +71,9 @@ class ScreenIO(QObject):
         self.prevcount   = 0
         self.prevtime    = 0.0
 
+        # Communicate reset to gui
+        self.manager.sendEvent(DisplayFlagEvent('RESET', 'ALL'))
+
     def echo(self, text):
         if self.manager.isActive():
             self.manager.sendEvent(StackTextEvent(disptext=text))
@@ -97,13 +101,18 @@ class ScreenIO(QObject):
         if self.manager.isActive():
             self.manager.sendEvent(DisplayFlagEvent('SYM'))
 
+    def trails(self,sw):
+        if self.manager.isActive():
+            self.manager.sendEvent(DisplayFlagEvent('TRAIL',sw))
+
     def pan(self, *args):
+        ''' Move center of display, relative of to absolute position lat,lon '''
         if self.manager.isActive():
             if args[0] == "LEFT":
                 self.ctrlon -= 0.5
             elif args[0] == "RIGHT":
                 self.ctrlon += 0.5
-            elif args[0] == "UP" or args[0]== "ABOVE":
+            elif args[0] == "UP" or args[0] == "ABOVE":
                 self.ctrlat += 0.5
             elif args[0] == "DOWN":
                 self.ctrlat -= 0.5
@@ -113,7 +122,13 @@ class ScreenIO(QObject):
             self.manager.sendEvent(PanZoomEvent(pan=(self.ctrlat, self.ctrlon), absolute=True))
 
     def showroute(self, acid):
+        ''' Toggle show route for this aircraft '''
         self.route_acid = acid
+        return True
+
+    def addnavwpt(self, name, lat, lon):
+        ''' Add custom waypoint to visualization '''
+        self.manager.sendEvent(DisplayFlagEvent('DEFWPT', (name, lat, lon)))
         return True
 
     def showacinfo(self, acid, infotext):
@@ -122,6 +137,8 @@ class ScreenIO(QObject):
         return True
 
     def showssd(self, param):
+        ''' Conflict prevention display
+            Show solution space diagram, indicating potential conflicts'''
         if self.manager.isActive():
             if param == 'ALL' or param == 'OFF':
                 self.manager.sendEvent(DisplayFlagEvent('SSD', param))
@@ -135,25 +152,44 @@ class ScreenIO(QObject):
             self.manager.sendEvent(ShowDialogEvent())
         return ''
 
+    def show_cmd_doc(self, cmd=''):
+        if self.manager.isActive():
+            self.manager.sendEvent(ShowDialogEvent(1, cmd=cmd))
+
     def feature(self, switch, argument=''):
         if self.manager.isActive():
             self.manager.sendEvent(DisplayFlagEvent(switch, argument))
 
     def objappend(self, objtype, objname, data_in):
+        """Add a drawing object to the radar screen using the following inpouts:
+           objtype: "LINE"/"POLY" /"BOX"/"CIRCLE" = string with type of object
+           objname: string with a name as key for reference
+           objdata: lat,lon data, depending on type:
+                    POLY/LINE: lat0,lon0,lat1,lon1,lat2,lon2,....
+                    BOX : lat0,lon0,lat1,lon1   (bounding box coordinates)
+                    CIRCLE: latctr,lonctr,radiusnm  (circle parameters)
+        """
         if data_in is None:
             # This is an object delete event
             data = None
+
         elif objtype == 'LINE' or objtype[:4] == 'POLY':
+            # Input data is laist or array: [lat0,lon0,lat1,lon1,lat2,lon2,lat3,lon3,..]
             data = np.array(data_in, dtype=np.float32)
+
         elif objtype == 'BOX':
-            # BOX
+            # Convert box coordinates into polyline list
+            # BOX: 0 = lat0, 1 = lon0, 2 = lat1, 3 = lon1 , use bounding box
             data = np.array([data_in[0], data_in[1],
                              data_in[0], data_in[3],
                              data_in[2], data_in[3],
                              data_in[2], data_in[1]], dtype=np.float32)
 
         elif objtype == 'CIRCLE':
-            # parameters
+            # Input data is latctr,lonctr,radius[nm]
+            # Convert circle into polyline list
+
+            # Circle parameters
             Rearth = 6371000.0             # radius of the Earth [m]
             numPoints = 72                 # number of straight line segments that make up the circrle
 
@@ -194,12 +230,11 @@ class ScreenIO(QObject):
     # =========================================================================
     @pyqtSlot()
     def send_siminfo(self):
-        # if self.manager.isActive():
-        t  = time.time()        
-        dt = np.maximum(t - self.prevtime, 0.00001) # avoid divide by 0 
+        t  = time.time()
+        dt = np.maximum(t - self.prevtime, 0.00001)  # avoid divide by 0
         speed = (self.samplecount - self.prevcount) / dt * self.sim.simdt
         self.manager.sendEvent(SimInfoEvent(speed, self.sim.simdt, self.sim.simt,
-            self.sim.traf.ntraf, self.sim.state, self.sim.scenname))
+            self.sim.simtclock, self.sim.traf.ntraf, self.sim.state, stack.get_scenname()))
         self.prevtime  = t
         self.prevcount = self.samplecount
 
@@ -207,6 +242,7 @@ class ScreenIO(QObject):
     def send_aircraft_data(self):
         if self.manager.isActive():
             data            = ACDataEvent()
+            data.simt       = self.sim.simt
             data.id         = self.sim.traf.id
             data.lat        = self.sim.traf.lat
             data.lon        = self.sim.traf.lon
@@ -218,6 +254,18 @@ class ScreenIO(QObject):
             data.confcpalon = self.sim.traf.asas.lonowncpa
             data.trk        = self.sim.traf.hdg
 
+            # Trails, send only new line segments to be added            
+            data.swtrails  = self.sim.traf.trails.active 
+            data.traillat0 = self.sim.traf.trails.newlat0
+            data.traillon0 = self.sim.traf.trails.newlon0
+            data.traillat1 = self.sim.traf.trails.newlat1
+            data.traillon1 = self.sim.traf.trails.newlon1
+            self.sim.traf.trails.clearnew()
+
+            # Last segment which is being built per aircraft
+            data.traillastlat   = list(self.sim.traf.trails.lastlat)
+            data.traillastlon   = list(self.sim.traf.trails.lastlon)
+                
             # Conflict statistics
             data.nconf_tot  = len(self.sim.traf.asas.conflist_all)
             data.nlos_tot   = len(self.sim.traf.asas.LOSlist_all)
@@ -235,17 +283,20 @@ class ScreenIO(QObject):
             data.acid          = self.route_acid
             idx   = self.sim.traf.id2idx(self.route_acid)
             if idx >= 0:
-                route          = self.sim.traf.fms.route[idx]
+                route          = self.sim.traf.ap.route[idx]
                 data.iactwp    = route.iactwp
 
                 # We also need the corresponding aircraft position
                 data.aclat     = self.sim.traf.lat[idx]
                 data.aclon     = self.sim.traf.lon[idx]
 
-                data.lat       = route.wplat
-                data.lon       = route.wplon
+                data.wplat     = route.wplat
+                data.wplon     = route.wplon
 
-                data.wptlabels = route.wpname
+                data.wpalt     = route.wpalt
+                data.wpspd     = route.wpspd
+
+                data.wpname    = route.wpname
 
             self.manager.sendEvent(data)  # Send route data to GUI
             # Empty route acid string means no longer send route data
@@ -262,6 +313,6 @@ class ScreenIO(QObject):
             # data.etas       = self.sim.traf.AMAN.
             # data.delays     = self.sim.traf.AMAN.
             # data.rwys       = self.sim.traf.AMAN.
-            # data.spdratios  = self.sim.traf.AMAN. 
+            # data.spdratios  = self.sim.traf.AMAN.
             # self.manager.sendEvent(data)
             pass

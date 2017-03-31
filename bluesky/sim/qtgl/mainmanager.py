@@ -6,6 +6,7 @@ except ImportError:
         QCoreApplication as qapp
 
 # Local imports
+from ...settings import max_nnodes
 from simevents import SimStateEventType, SimQuitEventType, BatchEventType, \
     BatchEvent, StackTextEvent, SimQuitEvent, SetNodeIdType, \
     SetActiveNodeType, AddNodeType
@@ -49,7 +50,7 @@ class MainManager(QObject):
         self.connections     = []
         self.localnodes      = []
         self.hosts           = dict()
-        self.max_nnodes      = cpu_count()
+        self.max_nnodes      = min(cpu_count(), max_nnodes)
         self.activenode      = 0
         self.sender_id       = None
         self.stopping        = False
@@ -189,8 +190,8 @@ class MainManager(QObject):
             self.connections[n][0].close()
         print 'Done.'
 
-    def event(self, event):
+    @classmethod
+    def sendEvent(cls, event):
         # Only send custom events to the active node
         if event.type() >= 1000:
-            self.connections[self.activenode][0].send((int(event.type()), event))
-        return True
+            cls.instance.connections[cls.actnode()][0].send((int(event.type()), event))

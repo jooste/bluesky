@@ -3,7 +3,11 @@
 from misc import txt2lat, txt2lon
 
 def txt2pos(name,traf,navdb,reflat,reflon):
-    return Position(name.upper().strip(),traf,navdb,reflat,reflon)
+    pos = Position(name.upper().strip(),traf,navdb,reflat,reflon)
+    if not pos.error:
+        return True,pos
+    else:
+        return False,name+" not found in database"
 
 def islat(txt):
     # Is it a latitude-like format or not?
@@ -29,6 +33,7 @@ class Position():
     def __init__(self,name,traf,navdb,reflat,reflon):
 
         self.name = name # default: copy source name
+        self.error = False # we're optmistic about our succes
 
         # lat,lon type ?
         if name.count(",")>0: #lat,lon or apt,rwy type
@@ -41,19 +46,20 @@ class Position():
 
         # runway type ? "EHAM/RW06","EHGG/RWY27"
         elif name.count("/RW")>0:
-            aptname,rwytxt = name.split("/")
-
-            rwyname = rwytxt.strip("RW").strip("Y").strip().upper() # remove RW or RWY and spaces
-
-            self.lat,self.lon = traf.navdb.rwythresholds[aptname][rwyname][:2] # raises error if not found
+            try:
+                aptname,rwytxt = name.split("/RW")
+                rwyname = rwytxt.lstrip("Y").upper() # remove Y and spaces
+                self.lat,self.lon = traf.navdb.rwythresholds[aptname][rwyname][:2] # raises error if not found
+            except:
+                self.error = True
             self.type = "rwy" 
 
         # airport?
-        elif navdb.apid.count(name)>0:
-            idx = navdb.apid.index(name.upper())
+        elif navdb.aptid.count(name)>0:
+            idx = navdb.aptid.index(name.upper())
 
-            self.lat = navdb.aplat[idx]
-            self.lon = navdb.aplon[idx]
+            self.lat = navdb.aptlat[idx]
+            self.lon = navdb.aptlon[idx]
             self.type ="apt"
 
         # fix or navaid?
@@ -84,7 +90,7 @@ class Position():
 #            name = clat + "%02d"%int(abs(round(lat))) + \
 #                   clon + "%03d"%int(abs(round(lon)))
         else:
-            pass
+            self.error = True            
             # raise error with missing data... (empty position object)
 
         return

@@ -8,6 +8,9 @@ performance_model = 'bluesky'
 # Indicate the datafile path
 data_path = 'data'
 
+# Verbose internal logging
+verbose = False
+
 # Indicate the logfile path
 log_path = 'output'
 
@@ -44,6 +47,9 @@ selsnapdt = 5.0
 # Prefer compiled BlueSky modules (cgeo, casas)
 prefer_compiled = True
 
+# Limit the max number of cpu nodes for parallel simulation
+max_nnodes = 999
+
 #=========================================================================
 #=  ASAS default settings
 #=========================================================================
@@ -69,16 +75,7 @@ asas_mar = 1.05
 #=============================================================================
 
 # Radarscreen font size in pixels
-text_size = 10
-
-# The size in pixels of the font texture of one character (Change this if the font scaling doesn't look good)
-text_texture_size = 62
-
-# Font for the radar screen. The default is courier, because it is monospaced.
-font_family = 'Courier'
-
-# Font weight. A weight of 0 is ultralight, whilst 99 will be an extremely black. 50 is normal, and 75 is bold.
-font_weight = 99
+text_size = 13
 
 # Radarscreen airport symbol size in pixels
 apt_size = 10
@@ -88,6 +85,12 @@ wpt_size = 10
 
 # Radarscreen aircraft symbol size in pixels
 ac_size = 16
+
+# Stack and command line text color
+stack_text_color = 0, 255, 0
+
+# Stack and command line background color
+stack_background_color = 102, 102, 102
 
 #=========================================================================
 #=  Settings for the BlueSky telnet server
@@ -107,13 +110,34 @@ modeS_port = 0
 
 # END OF SETTINGS
 
+
 # Import config settings from settings.cfg if this exists, if it doesn't create an initial config file
 def init(gui='ask'):
-    import os, sys
+    import os, sys, shutil
     configfile = 'settings.cfg'
+    # If BlueSky is run from a compiled bundle instead of from source, adjust the startup path
+    # and change the path of configurable files to $home/bluesky
+    if getattr(sys, 'frozen', False):
+        os.chdir(os.path.dirname(sys.executable))
+        bsdir = os.path.join(os.path.expanduser('~'), 'bluesky')
+        configfile = os.path.join(bsdir, 'settings.cfg')
+        if not os.path.isdir(bsdir):
+            os.makedirs(os.path.join(bsdir, 'output'))
+        if not os.path.isdir(os.path.join(bsdir, 'scenario')):
+            shutil.copytree('scenario', os.path.join(bsdir, 'scenario'))
+        if not os.path.isfile(os.path.join(bsdir, 'settings.cfg')):
+            with open('settings.cfg', 'r') as fin, \
+                 open(os.path.join(bsdir, 'settings.cfg'), 'w') as fout:
+                for line in fin:
+                    if line[:8] == 'log_path':
+                        line = "log_path = '" + os.path.join(bsdir, 'output').replace('\\', '/') + "'"
+                    if line[:13] == 'scenario_path':
+                        line = "scenario_path = '" + os.path.join(bsdir, 'scenario').replace('\\', '/') + "'"
+                    fout.write(line + '\n')
+
     for i in range(len(sys.argv)):
         if sys.argv[i] == '--config-file':
-            configfile = sys.argv[i+1]
+            configfile = sys.argv[i + 1]
             break
 
     if not os.path.isfile(configfile):

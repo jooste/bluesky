@@ -12,8 +12,6 @@ class Keyboard:
         Keyboard(tmx)                      :  constructor
 
         update()                           : Check for input & process it
-        radarclick(pos,command,scr,traf,navdb)   : Process click on radar window to
-                                                   to insert data in edit window
 
     Created by  : Jacco M. Hoekstra (TU Delft)
     """
@@ -163,9 +161,9 @@ class Keyboard:
                         self.dragdx = event.pos[0] - scr.menu.x
                         self.dragdy = event.pos[1] - scr.menu.y
                 elif event.button==4:
-                    scr.zoom(0.5*sqrt(2.0))
-                elif event.button==5:
                     scr.zoom(sqrt(2.0))
+                elif event.button==5:
+                    scr.zoom(0.5*sqrt(2.0))
                 
             # Mouse motion: drag edit/menu window with mouse, if necessary
             # Check also for mouse button 1                    

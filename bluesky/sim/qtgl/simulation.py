@@ -8,7 +8,8 @@ import time
 
 # Local imports
 from screenio import ScreenIO
-from simevents import StackTextEventType, BatchEventType, BatchEvent, SimStateEvent, SimQuitEventType
+from simevents import StackTextEventType, BatchEventType, BatchEvent, \
+    SimStateEvent, SimQuitEventType, StackInitEvent
 from ...traf import Traffic
 from ...navdb import Navdatabase
 from ... import stack
@@ -16,6 +17,9 @@ from ...traf import Metric
 from ... import settings
 from ...tools.datafeed import Modesbeast
 from ...tools import datalog, areafilter
+from ...tools.misc import txt2tim, tim2txt
+
+onedayinsec = 24 * 3600  # [s] time of one day in seconds for clock time
 
 
 class Simulation(QObject):
@@ -48,15 +52,16 @@ class Simulation(QObject):
         # Simulation timestep multiplier: run sim at n x speed
         self.dtmult      = 1.0
 
+        # Simulated clock time
+        self.deltclock   = 0.0
+        self.simtclock   = self.simt
+
         # System timestep [milliseconds]
         self.sysdt       = int(self.simdt / self.dtmult * 1000)
 
         # Flag indicating running at fixed rate or fast time
         self.ffmode      = False
         self.ffstop      = None
-
-        # If available, name of the currently running scenario
-        self.scenname    = 'Untitled'
 
         # Simulation objects
         self.navdb       = Navdatabase('global')
@@ -73,6 +78,10 @@ class Simulation(QObject):
     def doWork(self):
         self.syst  = int(time.time() * 1000.0)
         self.fixdt = self.simdt
+
+        # Send list of stack functions available in this sim to gui at start
+        stackdict = {cmd : val[0][len(cmd) + 1:] for cmd, val in stack.cmddict.iteritems()}
+        self.manager.sendEvent(StackInitEvent(stackdict))
 
         while self.running:
             # Datalog pre-update (communicate current sim time to loggers)
@@ -111,6 +120,9 @@ class Simulation(QObject):
                 # Update time for the next timestep
                 self.simt += self.simdt
 
+            # Update clock
+            self.simtclock = (self.deltclock + self.simt) % onedayinsec
+
             # Process Qt events
             self.manager.processEvents()
 
@@ -121,6 +133,7 @@ class Simulation(QObject):
 
                 if remainder > 0:
                     QThread.msleep(remainder)
+
             elif self.ffstop is not None and self.simt >= self.ffstop:
                 if self.benchdt > 0.0:
                     self.screenio.echo('Benchmark complete: %d samples in %.3f seconds.' % (self.screenio.samplecount, time.time() - self.bencht))
@@ -135,23 +148,24 @@ class Simulation(QObject):
                 self.prevstate = self.state
 
     def stop(self):
-        self.state   = Simulation.end
+        self.state = Simulation.end
         datalog.reset()
 
     def start(self):
         if self.ffmode:
             self.syst = int(time.time() * 1000.0)
-        self.ffmode  = False
-        self.state   = Simulation.op
+        self.ffmode   = False
+        self.state    = Simulation.op
 
     def pause(self):
-        self.state   = Simulation.hold
+        self.state = Simulation.hold
 
     def reset(self):
-        self.simt     = 0.0
-        self.state    = Simulation.init
-        self.ffmode   = False
-        self.scenname = 'Untitled'
+        self.simt      = 0.0
+        self.deltclock = 0.0
+        self.simtclock = self.simt
+        self.state     = Simulation.init
+        self.ffmode    = False
         self.traf.reset(self.navdb)
         stack.reset()
         datalog.reset()
@@ -167,7 +181,7 @@ class Simulation(QObject):
 
     def setDtMultiplier(self, mult):
         self.dtmult = mult
-        self.sysdt = int(self.simdt / self.dtmult * 1000)
+        self.sysdt  = int(self.simdt / self.dtmult * 1000)
 
     def setFixdt(self, flag, nsec=None):
         if flag:
@@ -187,10 +201,6 @@ class Simulation(QObject):
         self.bencht  = 0.0  # Start time will be set at next sim cycle
         self.benchdt = dt
 
-    def scenarioInit(self, name):
-        self.screenio.echo('Starting scenario ' + name)
-        self.scenname = name
-
     def sendState(self):
         self.manager.sendEvent(SimStateEvent(self.state))
 
@@ -199,9 +209,12 @@ class Simulation(QObject):
 
     def batch(self, filename):
         # The contents of the scenario file are meant as a batch list: send to manager and clear stack
-        stack.openfile(filename)
-        self.manager.sendEvent(BatchEvent(stack.scentime, stack.scencmd))
+        result = stack.openfile(filename)
+        scentime, scencmd = stack.get_scendata()
+        if result is True:
+            self.manager.sendEvent(BatchEvent(scentime, scencmd))
         self.reset()
+        return result
 
     def event(self, event):
         # Keep track of event processing
@@ -215,8 +228,7 @@ class Simulation(QObject):
         elif event.type() == BatchEventType:
             # We are in a batch simulation, and received an entire scenario. Assign it to the stack.
             self.reset()
-            stack.scentime = event.scentime
-            stack.scencmd  = event.scencmd
+            stack.set_scendata(event.scentime, event.scencmd)
             self.start()
             event_processed     = True
         elif event.type() == SimQuitEventType:
@@ -227,3 +239,30 @@ class Simulation(QObject):
             event_processed = self.screenio.event(event)
 
         return event_processed
+
+    def setclock(self, txt=""):
+        """ Set simulated clock time offset"""
+        if txt == "":
+            pass  # avoid error message, just give time
+
+        elif txt.upper() == "RUN":
+            self.deltclock = 0.0
+            self.simtclock = self.simt
+
+        elif txt.upper() == "REAL":
+            tclock = time.localtime()
+            self.simtclock = tclock.tm_hour * 3600. + tclock.tm_min * 60. + tclock.tm_sec
+            self.deltclock = self.simtclock - self.simt
+
+        elif txt.upper() == "UTC":
+            utclock = time.gmtime()
+            self.simtclock = utclock.tm_hour * 3600. + utclock.tm_min * 60. + utclock.tm_sec
+            self.deltclock = self.simtclock - self.simt
+
+        elif txt.replace(":", "").replace(".", "").isdigit():
+            self.simtclock = txt2tim(txt)
+            self.deltclock = self.simtclock - self.simt
+        else:
+            return False, "Time syntax error"
+
+        return True, "Time is now " + tim2txt(self.simtclock)

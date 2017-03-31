@@ -4,19 +4,23 @@ try:
     from PyQt5.QtWidgets import QMainWindow, QSplashScreen, QTreeWidgetItem, QPushButton
     from PyQt5 import uic
 except ImportError:
-    from PyQt4.QtCore import Qt, pyqtSlot, QSize    
+    from PyQt4.QtCore import Qt, pyqtSlot, QSize
     from PyQt4.QtGui import QPixmap, QMainWindow, QIcon, QSplashScreen, \
         QItemSelectionModel, QTreeWidgetItem, QPushButton
     from PyQt4 import uic
 
 # Local imports
 from ...sim.qtgl import PanZoomEvent, MainManager as manager
+from ...settings import data_path, stack_text_color as fg, stack_background_color as bg
+import platform
+
+is_osx = platform.system() == 'Darwin'
 
 
 class Splash(QSplashScreen):
     """ Splash screen: BlueSky logo during start-up"""
     def __init__(self):
-        super(Splash, self).__init__(QPixmap('data/graphics/splash.gif'), Qt.WindowStaysOnTopHint)
+        super(Splash, self).__init__(QPixmap(data_path + '/graphics/splash.gif'), Qt.WindowStaysOnTopHint)
 
 
 class MainWindow(QMainWindow):
@@ -25,7 +29,12 @@ class MainWindow(QMainWindow):
     def __init__(self, app, radarwidget):
         super(MainWindow, self).__init__()
         self.app = app
-        uic.loadUi("./data/graphics/mainwindow.ui", self)
+        if is_osx:
+            self.app.setWindowIcon(QIcon(data_path + "/graphics/bluesky.icns"))
+        else:
+            self.app.setWindowIcon(QIcon(data_path + "/graphics/icon.gif"))
+
+        uic.loadUi(data_path + "/graphics/mainwindow.ui", self)
 
         # list of buttons to connect to, give icons, and tooltips
         #           the button         the icon      the tooltip    the callback
@@ -52,7 +61,7 @@ class MainWindow(QMainWindow):
         for b in buttons.iteritems():
             # Set icon
             if not b[1][0] is None:
-                icon = QIcon('data/graphics/icons/' + b[1][0])
+                icon = QIcon(data_path + '/graphics/icons/' + b[1][0])
                 b[0].setIcon(icon)
             # Set tooltip
             if not b[1][1] is None:
@@ -60,12 +69,18 @@ class MainWindow(QMainWindow):
             # Connect clicked signal
             b[0].clicked.connect(b[1][2])
 
+        # Link menubar buttons
+        self.action_Open.triggered.connect(app.show_file_dialog)
+        self.action_Save.triggered.connect(self.buttonClicked)
+
         self.radarwidget = radarwidget
         radarwidget.setParent(self.centralwidget)
         self.verticalLayout.insertWidget(0, radarwidget, 1)
         # Connect to manager's nodelist changed signal
         manager.instance.nodes_changed.connect(self.nodesChanged)
         manager.instance.activenode_changed.connect(self.actnodeChanged)
+        # Connect widgets with each other
+        self.console.cmdline_stacked.connect(self.radarwidget.cmdline_stacked)
 
         self.nodetree.setVisible(False)
         self.nodetree.setIndentation(0)
@@ -77,15 +92,47 @@ class MainWindow(QMainWindow):
         self.hosts = list()
         self.nodes = list()
 
+        fgcolor = '#%02x%02x%02x' % fg
+        bgcolor = '#%02x%02x%02x' % bg
+
+        self.stackText.setStyleSheet('color:' + fgcolor + '; background-color:' + bgcolor)
+        self.lineEdit.setStyleSheet('color:' + fgcolor + '; background-color:' + bgcolor)
+
+    def keyPressEvent(self, event):
+        if event.modifiers() & Qt.ShiftModifier:
+            dlat = 1.0 / (self.radarwidget.zoom * self.radarwidget.ar)
+            dlon = 1.0 / (self.radarwidget.zoom * self.radarwidget.flat_earth)
+            if event.key() == Qt.Key_Up:
+                self.radarwidget.event(PanZoomEvent(pan=(dlat, 0.0)))
+            elif event.key() == Qt.Key_Down:
+                self.radarwidget.event(PanZoomEvent(pan=(-dlat, 0.0)))
+            elif event.key() == Qt.Key_Left:
+                self.radarwidget.event(PanZoomEvent(pan=(0.0, -dlon)))
+            elif event.key() == Qt.Key_Right:
+                self.radarwidget.event(PanZoomEvent(pan=(0.0, dlon)))
+
+        elif event.key() == Qt.Key_Escape:
+                self.app.quit()
+
+        elif event.key() == Qt.Key_F11:  # F11 = Toggle Full Screen mode
+            if not self.isFullScreen():
+                self.showFullScreen()
+            else:
+                self.showNormal()
+
+        else:
+            # All other events go to the BlueSky console
+            self.console.keyPressEvent(event)
+
     def closeEvent(self, event):
         self.app.quit()
 
-    @pyqtSlot(int)
+    @pyqtSlot(tuple, int)
     def actnodeChanged(self, nodeid, connidx):
         self.nodelabel.setText('<b>Node</b> %d:%d' % nodeid)
         self.nodetree.setCurrentItem(self.hosts[nodeid[0]].child(nodeid[1]), 0, QItemSelectionModel.ClearAndSelect)
 
-    @pyqtSlot(str, int)
+    @pyqtSlot(str, tuple, int)
     def nodesChanged(self, address, nodeid, connidx):
         if nodeid[0] < len(self.hosts):
             host = self.hosts[nodeid[0]]
@@ -96,16 +143,13 @@ class MainWindow(QMainWindow):
                 hostname = 'This computer'
             f = host.font(0)
             f.setBold(True)
-            # host.setFont(0, f)
-            # host.setText(0, hostname)
             host.setExpanded(True)
             btn = QPushButton(self.nodetree)
-            # btn.setFont(0, f)
             btn.setText(hostname)
             btn.setFlat(True)
             btn.setStyleSheet('font-weight:bold')
 
-            btn.setIcon(QIcon('data/graphics/icons/addnode.svg'))
+            btn.setIcon(QIcon(data_path + '/graphics/icons/addnode.svg'))
             btn.setIconSize(QSize(24, 16))
             btn.setLayoutDirection(Qt.RightToLeft)
             btn.setMaximumHeight(16)
@@ -170,10 +214,18 @@ class MainWindow(QMainWindow):
         elif self.sender() == self.showpz:
             self.radarwidget.show_pz = not self.radarwidget.show_pz
         elif self.sender() == self.showapt:
-            self.radarwidget.show_apt = not self.radarwidget.show_apt
+            if self.radarwidget.show_apt < 3:
+                self.radarwidget.show_apt += 1
+            else:
+                self.radarwidget.show_apt = 0
         elif self.sender() == self.showwpt:
-            self.radarwidget.show_wpt = not self.radarwidget.show_wpt
+            if self.radarwidget.show_wpt < 2:
+                self.radarwidget.show_wpt += 1
+            else:
+                self.radarwidget.show_wpt = 0
         elif self.sender() == self.showlabels:
             self.radarwidget.show_lbl = not self.radarwidget.show_lbl
         elif self.sender() == self.showmap:
             self.radarwidget.show_map = not self.radarwidget.show_map
+        elif self.sender() == self.action_Save:
+            self.app.stack('SAVEIC')

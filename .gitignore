@@ -1,5 +1,6 @@
 .DS_Store
 settings.cfg
+*.bak
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -23,6 +24,7 @@ lib64/
 parts/
 sdist/
 var/
+tmp/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -59,3 +61,5 @@ docs/_build/
 target/
 
 data/cache
+data/coefficients/BADA/*
+!/data/coefficients/BADA/README

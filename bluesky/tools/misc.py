@@ -36,6 +36,32 @@ def tim2txt(t):
     return strftime("%H:%M:%S.", gmtime(t)) + i2txt(int((t - int(t)) * 100.), 2)
 
 
+def txt2tim(txt):
+    """Convert text to time in seconds:
+       HH
+       HH:MM
+       HH:MM:SS
+       HH:MM:SS.hh
+    """
+    timlst = txt.split(":")
+
+    t = 0.
+
+    # HH
+    if len(timlst[0])>0 and timlst[0].isdigit():
+        t = t+3600.*int(timlst[0])
+        
+    # MM
+    if len(timlst)>1 and len(timlst[1])>0 and timlst[1].isdigit():
+        t = t+60.*int(timlst[1])
+    
+    # SS.hh
+    if len(timlst)>2 and len(timlst[2])>0:
+        if timlst[2].replace(".","0").isdigit():
+            t = t + float(timlst[2])
+    
+    return t
+    
 def i2txt(i, n):
     """Convert integer to string with leading zeros to make it n chars long"""
     itxt = str(i)
@@ -131,7 +157,7 @@ def cmdsplit(cmdline, trafids=None):
 
 def txt2lat(lattxt):
     """txt2lat: input txt: N52'14'13.5 or N52"""
-    txt = lattxt.replace("N", "").replace("S", "-")  # North positive, South negative
+    txt = lattxt.upper().replace("N", "").replace("S", "-")  # North positive, South negative
     neg = txt.count("-") > 0
     if txt.count("'") > 0 or txt.count('"') > 0:
         txt = txt.replace('"', "'")  # replace " by '
@@ -142,10 +168,14 @@ def txt2lat(lattxt):
             f = -1.
         else:
             f = 1.
-        for deg in degs:
-            if len(deg) > 0:
-                lat = lat + f * abs(float(deg)) / float(div)
-                div = div * 60
+        for xtxt in degs:
+            if len(xtxt) > 0:
+                try:
+                    lat = lat + f * abs(float(xtxt)) / float(div)
+                    div = div * 60
+                except:
+                    print "txt2lat value error:",lattxt
+                    return 0.0                    
     else:
         lat = float(txt)
     return lat
@@ -156,28 +186,81 @@ def txt2lon(lontxt):
     """txt2lat: input txt: N52'14'13.5 or N52"""
     # It should first be checked if lontxt is a regular float, to avoid removing
     # the 'e' in a scientific-notation number.
-    try:
+    try: 
         lon = float(lontxt)
-    except ValueError:
-        txt = lontxt.replace("E", "").replace("W", "-")  # East positive, West negative
+
+    # Leading E will trigger error ansd means simply East,just as  W = West = Negative
+    except:
+        
+        txt = lontxt.upper().replace("E", "").replace("W", "-")  # East positive, West negative
         neg = txt.count("-") > 0
+
+        # Use of "'" and '"' as degrees/minutes/seconds
+        # Also "N52'"
         if txt.count("'") > 0 or txt.count('"') > 0:
             txt = txt.replace('"', "'")  # replace " by '
             degs = txt.split("'")
             div = 1
-            lon = 0
+            lon = 0.0
             if neg:
                 f = -1.
             else:
                 f = 1.
-            for deg in degs:
-                lon = lon + f * abs(float(deg)) / float(div)
+            for xtxt in degs:
+                if len(xtxt)>0.0:
+                    try:
+                       lon = lon + f * abs(float(xtxt)) / float(div)
+                    except:
+                       print "txt2lon value error:",lontxt
+                       return 0.0 
 
                 div = div * 60
+        else:  # Cope with "W65"without "'" or '"', also "-65" or "--65" 
+            try:
+                neg = txt.count("-") > 0
+                if neg:
+                    f = -1.
+                else:
+                    f = 1.
+                lon = f*abs(float(txt))
+            except:
+                print "txt2lon value error:",lontxt
+                return 0.0 
 
     return lon
 
+def lat2txt(lat):
+    d,m,s = float2degminsec(abs(lat))
+    return "NS"[lat<0] + "%02d'%02d'"%(int(d),int(m))+str(s)+'"'
+
+def lon2txt(lon):
+    d,m,s = float2degminsec(abs(lon))    
+    return "EW"[lon<0] + "%03d'%02d'"%(int(d),int(m))+str(s)+'"'
+
+def latlon2txt(lat,lon):
+    return lat2txt(lat)+"  "+lon2txt(lon)
 
 def deg180(dangle):
     """ Convert any difference in angles to interval [ -180,180 ) """
     return (dangle + 180.) % 360. - 180.
+
+def float2degminsec(x):
+    deg     = int(x)
+    minutes = int(x*60.) - deg *60.
+    sec     = int(x*3600.) - deg*3600. - minutes*60.
+    return deg,minutes,sec
+
+def findall(lst,x):
+       # Find indices of multiple occurences of x in lst
+       idx = []
+       i = 0
+       found = True
+       while i<len(lst) and found:
+           try:
+               i = lst[i:].index(x)+i
+               idx.append(i)
+               i = i + 1
+               found = True
+           except:
+               found = False
+       return idx

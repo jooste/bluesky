@@ -3,9 +3,9 @@ try:
 except ImportError:
     from PyQt4.QtCore import QEvent
 
-NUMEVENTS = 15
+NUMEVENTS = 16
 SetNodeIdType, SetActiveNodeType, AddNodeType, SimStateEventType, BatchEventType, PanZoomEventType, ACDataEventType, \
-    SimInfoEventType, StackTextEventType, ShowDialogEventType, \
+    SimInfoEventType, StackTextEventType, StackInitEventType, ShowDialogEventType, \
     DisplayFlagEventType, RouteDataEventType, DisplayShapeEventType, \
     SimQuitEventType, AMANEventType = range(1000, 1000 + NUMEVENTS)
 
@@ -36,14 +36,15 @@ class DisplayFlagEvent(QEvent):
 
 
 class SimInfoEvent(QEvent):
-    def __init__(self, sys_freq, simdt, simt, n_ac, mode, scenname):
+    def __init__(self, sys_freq, simdt, simt, simtclock, n_ac, mode, scenname):
         super(SimInfoEvent, self).__init__(SimInfoEventType)
-        self.sys_freq = sys_freq
-        self.simdt    = simdt
-        self.simt     = simt
-        self.n_ac     = n_ac
-        self.mode     = mode
-        self.scenname = scenname
+        self.sys_freq  = sys_freq
+        self.simdt     = simdt
+        self.simt      = simt
+        self.simtclock = simtclock
+        self.n_ac      = n_ac
+        self.mode      = mode
+        self.scenname  = scenname
 
 
 class StackTextEvent(QEvent):
@@ -53,17 +54,25 @@ class StackTextEvent(QEvent):
         self.cmdtext = cmdtext
 
 
+class StackInitEvent(QEvent):
+    def __init__(self, stackdict):
+        super(StackInitEvent, self).__init__(StackInitEventType)
+        self.stackdict = stackdict
+
+
 class ShowDialogEvent(QEvent):
     # Types of dialog
     filedialog_type = 0
+    docwin_type = 1
 
-    def __init__(self, dialog_type=0):
+    def __init__(self, dialog_type=0, **extraattr):
         super(ShowDialogEvent, self).__init__(ShowDialogEventType)
         self.dialog_type = dialog_type
+        self.__dict__.update(extraattr)
 
 
 class RouteDataEvent(QEvent):
-    aclat = aclon = lat = lon = wptlabels = []
+    aclat = aclon = wplat = wplon = wpalt = wpspd = wpname = []
     iactwp = -1
     acid = ""
 
