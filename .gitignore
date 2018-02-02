@@ -1,3 +1,14 @@
+scenario/ic.scn
+data/cache
+data/performance/BADA/*
+!/data/performance/BADA/README.md
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
 .DS_Store
 settings.cfg
 *.bak
@@ -5,8 +16,11 @@ settings.cfg
 __pycache__/
 *.py[cod]
 
-# Sublime text project files
+# Editor project files
 *.sublime*
+*.atom-build*
+*.build-tools*
+.idea/*
 
 # C extensions
 *.so
@@ -61,5 +75,6 @@ docs/_build/
 target/
 
 data/cache
-data/coefficients/BADA/*
-!/data/coefficients/BADA/README
+data/performance/BADA/*
+!/data/performance/BADA/README
+ssd.obj

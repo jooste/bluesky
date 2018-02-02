@@ -1,3 +1,4 @@
+""" Navigation display for the QTGL gui."""
 try:
     from PyQt5.QtCore import qCritical, QTimer
     from PyQt5.QtOpenGL import QGLWidget
@@ -12,10 +13,10 @@ from math import sin, cos, radians
 import numpy as np
 from ctypes import c_float, c_int, Structure
 
-from glhelpers import BlueSkyProgram, RenderObject, UniformBuffer
+from .glhelpers import BlueSkyProgram, RenderObject, UniformBuffer
 
-VERTEX_IS_LATLON, VERTEX_IS_METERS, VERTEX_IS_SCREEN, VERTEX_IS_GLXY = range(4)
-ATTRIB_VERTEX, ATTRIB_TEXCOORDS, ATTRIB_LAT, ATTRIB_LON, ATTRIB_ORIENTATION, ATTRIB_COLOR, ATTRIB_TEXDEPTH = range(7)
+VERTEX_IS_LATLON, VERTEX_IS_METERS, VERTEX_IS_SCREEN, VERTEX_IS_GLXY = list(range(4))
+ATTRIB_VERTEX, ATTRIB_TEXCOORDS, ATTRIB_LAT, ATTRIB_LON, ATTRIB_ORIENTATION, ATTRIB_COLOR, ATTRIB_TEXDEPTH = list(range(7))
 
 white                = (255, 255, 255)
 black                = (0,   0,   0)
@@ -73,7 +74,7 @@ class ND(QGLWidget):
     def create_objects(self):
         if not (self.isValid() and self.shareWidget.initialized):
             self.invalid_count += 1
-            print 'ND: Context not valid in create_objects, or shareWidget not yet initialized'
+            print('ND: Context not valid in create_objects, or shareWidget not yet initialized')
             QTimer.singleShot(100, self.create_objects)
             return
 
@@ -195,8 +196,8 @@ class ND(QGLWidget):
     def resizeGL(self, width, height):
         # paint within the largest possible rectangular area in the window
         w = h = min(width, height)
-        x = max(0, (width - w) / 2)
-        y = max(0, (height - h) / 2)
+        x = max(0, (width - w) // 2)
+        y = max(0, (height - h) // 2)
         self.viewport = (x, y, w, h)
 
     def paintGL(self):

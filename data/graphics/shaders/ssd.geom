@@ -12,9 +12,11 @@ in GSData {
     vec2 vAR;
     vec4 ownship;
     vec4 intruder;
+	vec2 asasreso;
     float dH;
     int own_id;
     int int_id;
+    int selssd;
 } gs_in[];
 
 out vec2 ssd_coord;
@@ -26,7 +28,7 @@ uniform int n_ac;
 
 void intersect_vmax_box(in vec2 Vint, in vec2 n, out vec2 vertex, out int segment)
 {
-    // We look at line-line intersections, where line 1 is Vint + n * s, and line 2 is a + b * t, 
+    // We look at line-line intersections, where line 1 is Vint + n * s, and line 2 is a + b * t,
     // where a is a corner of the box, and b the directional vector of an edge
     // If an intersection exists, the value for s at the intersection is found as:
     // s = (det([a b]) - det([Vint b])) / det([n b])
@@ -71,6 +73,9 @@ void intersect_vmax_box(in vec2 Vint, in vec2 n, out vec2 vertex, out int segmen
 
 void main()
 {
+    if (gs_in[0].selssd == 0) {
+        return;
+    }
     // First thing to draw is the SSD background
     if (gs_in[0].int_id == 0) {
         color_fs = vec4(0.5, 0.5, 0.5, 0.5);
@@ -105,7 +110,7 @@ void main()
             // Range check
             if (d <= LOOKAHEAD_RANGE && d > RPZ) {
                 color_fs = vec4(1.0, 0.0, 0.0, 1.0);
-                
+
                 // Aircraft is within range, draw a triangular velocity obstacle
                 float trkint = radians(gs_in[0].intruder[3]);
                 vec2 Vint = gs_in[0].intruder[2] * vec2(sin(trkint), cos(trkint));
@@ -146,7 +151,7 @@ void main()
                 //             }
                 //             if (segment1 == 0 || segment1 == 3) {
                 //                 ssd_coord.y = Vlimits[2];
-                //                 gl_Position.y += gs_in[0].vAR[1] * VSCALE * Vlimits[2]; 
+                //                 gl_Position.y += gs_in[0].vAR[1] * VSCALE * Vlimits[2];
                 //             } else {
                 //                 ssd_coord.y = -Vlimits[2];
                 //                 gl_Position.y -= gs_in[0].vAR[1] * VSCALE * Vlimits[2];
@@ -165,7 +170,7 @@ void main()
                 //         gl_Position = gl_in[0].gl_Position;
                 //         if (segment2 == 1 || segment2 == 2) {
                 //             ssd_coord.x = Vlimits[2];
-                //             gl_Position.x += gs_in[0].vAR[0] * VSCALE * Vlimits[2]; 
+                //             gl_Position.x += gs_in[0].vAR[0] * VSCALE * Vlimits[2];
                 //         } else {
                 //             ssd_coord.x = -Vlimits[2];
                 //             gl_Position.x -= gs_in[0].vAR[0] * VSCALE * Vlimits[2];
@@ -224,7 +229,7 @@ void main()
         float trkown = radians(gs_in[0].ownship[3]);
         vec2 nVown = vec2(sin(trkown), cos(trkown));
         vec2 nnVown = 5.0 * vec2(nVown.y, -nVown.x);
-        
+
         ssd_coord = nnVown;
         gl_Position = gl_in[0].gl_Position + VSCALE * vec4(gs_in[0].vAR * ssd_coord, 0.0, 0.0);
         EmitVertex();
@@ -238,5 +243,30 @@ void main()
         gl_Position = gl_in[0].gl_Position + VSCALE * vec4(gs_in[0].vAR * ssd_coord, 0.0, 0.0);
         EmitVertex();
         EndPrimitive();
+    }
+	// After the last VO draw the asasresolution point by ASAS
+	if (gs_in[0].int_id == n_ac - 1) {
+		float dasasreso = gs_in[0].asasreso[0] * gs_in[0].asasreso[0] + gs_in[0].asasreso[1] * gs_in[0].asasreso[1];
+		// Only draw when the asasresolution point is within the velocity limits
+		if (dasasreso > Vlimits[0] - 200) {
+			// Yellow color
+			color_fs = vec4(1.0, 1.0, 0.0, 1.0);
+			// Size
+			float PSCALE = 20.0;
+
+			ssd_coord = gs_in[0].asasreso + PSCALE * vec2(-1.000,  0.000);
+			gl_Position = gl_in[0].gl_Position + VSCALE * vec4(gs_in[0].vAR * ssd_coord, 0.0, 0.0);
+			EmitVertex();
+			ssd_coord = gs_in[0].asasreso + PSCALE * vec2( 0.000, -1.000);
+			gl_Position = gl_in[0].gl_Position + VSCALE * vec4(gs_in[0].vAR * ssd_coord, 0.0, 0.0);
+			EmitVertex();
+			ssd_coord = gs_in[0].asasreso + PSCALE * vec2( 0.000,  1.000);
+			gl_Position = gl_in[0].gl_Position + VSCALE * vec4(gs_in[0].vAR * ssd_coord, 0.0, 0.0);
+			EmitVertex();
+			ssd_coord = gs_in[0].asasreso + PSCALE * vec2( 1.000,  0.000);
+			gl_Position = gl_in[0].gl_Position + VSCALE * vec4(gs_in[0].vAR * ssd_coord, 0.0, 0.0);
+			EmitVertex();
+			EndPrimitive();
+		}
     }
 }
