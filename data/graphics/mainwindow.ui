@@ -1015,13 +1015,6 @@
           <property name="readOnly">
            <bool>true</bool>
           </property>
-          <property name="html">
-           <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'.SF NS Text'; font-size:13pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-          </property>
           <property name="textInteractionFlags">
            <set>Qt::NoTextInteraction</set>
           </property>
@@ -1179,8 +1172,7 @@ p, li { white-space: pre-wrap; }
     <property name="title">
      <string>Connections</string>
     </property>
-    <addaction name="actionConnect_to_ADS_B_server"/>
-    <addaction name="actionEnable_output_to_UDP"/>
+    <addaction name="actionConnect_servers"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
@@ -1212,14 +1204,9 @@ p, li { white-space: pre-wrap; }
     <string>&amp;Reset view</string>
    </property>
   </action>
-  <action name="actionConnect_to_ADS_B_server">
+  <action name="actionConnect_servers">
    <property name="text">
-    <string>Connect to ADS-B server</string>
-   </property>
-  </action>
-  <action name="actionEnable_output_to_UDP">
-   <property name="text">
-    <string>Enable output to UDP</string>
+    <string>Connect servers</string>
    </property>
   </action>
   <action name="actionAbout_BlueSky">

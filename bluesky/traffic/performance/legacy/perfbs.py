@@ -1,21 +1,20 @@
 """ BlueSky aircraft performance calculations."""
 import os
 
-from xml.etree import ElementTree
 from math import *
 import numpy as np
 import bluesky as bs
 from bluesky.tools.aero import ft, g0, a0, T0, rho0, gamma1, gamma2,  beta, R, \
     kts, lbs, inch, sqft, fpm, vtas2cas
 from bluesky.tools.trafficarrays import TrafficArrays, RegisterElementParameters
-from .performance import esf, phases, calclimits, PHASE
+from bluesky.traffic.performance.legacy.performance import esf, phases, calclimits, PHASE
 from bluesky import settings
 
-from . import coeff_bs
+from bluesky.traffic.performance.legacy.coeff_bs import CoeffBS
 
 # Register settings defaults
-settings.set_variable_defaults(perf_path='data/performance', verbose=False)
-coeffBS = coeff_bs.CoeffBS()
+settings.set_variable_defaults(perf_path='data/performance/BS', verbose=False)
+coeffBS = CoeffBS()
 
 
 class PerfBS(TrafficArrays):
@@ -381,18 +380,13 @@ class PerfBS(TrafficArrays):
 
         return
 
-    def acceleration(self, simdt):
+    def acceleration(self):
         # define acceleration: aircraft taxiing and taking off use ground acceleration,
         # landing aircraft use ground deceleration, others use standard acceleration
 
-        ax = ((self.phase==PHASE['IC']) + (self.phase==PHASE['CR']) + \
-                     (self.phase==PHASE['AP']) + (self.phase==PHASE['LD']) )                         \
-                 * np.minimum(abs(bs.traf.delspd / max(1e-8,simdt)), bs.traf.ax) + \
-             ((self.phase==PHASE['TO']) + (self.phase==PHASE['GD'])*(1-self.post_flight))      \
-                 * np.minimum(abs(bs.traf.delspd / max(1e-8,simdt)), self.gr_acc) +  \
-              (self.phase==PHASE['GD'])*self.post_flight                                        \
-                 * np.minimum(abs(bs.traf.delspd / max(1e-8,simdt)), self.gr_dec)
-
+        ax = ((self.phase==PHASE['IC']) + (self.phase==PHASE['CR']) + (self.phase==PHASE['AP']) + (self.phase==PHASE['LD'])) * 0.5 \
+                + ((self.phase==PHASE['TO']) + (self.phase==PHASE['GD'])*(1-self.post_flight)) * self.gr_acc  \
+                +  (self.phase==PHASE['GD']) * self.post_flight * self.gr_dec
 
         return ax
 
