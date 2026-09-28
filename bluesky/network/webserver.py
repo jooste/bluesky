@@ -19,7 +19,7 @@ from bluesky.network.npcodec import encode_json
 from bluesky.network.server_async import Server
 import bluesky as bs
 
-bs.settings.set_variable_defaults(http_host='127.0.0.1', http_port=8080)
+bs.settings.set_variable_defaults(http_host='127.0.0.1', http_port=8081)
 
 
 @asynccontextmanager
@@ -60,7 +60,7 @@ app.add_middleware(
     session_cookie='MY_SESSION_ID',
     secret_key="mysecret",
 )
-app.mount('/static', StaticFiles(directory='static'), name='static')
+# app.mount('/static', StaticFiles(directory='static'), name='static')
 templates = Jinja2Templates(directory='templates')
 
 
