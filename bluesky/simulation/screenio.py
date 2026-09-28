@@ -175,6 +175,7 @@ class ScreenIO(Entity):
         data['vs']         = bs.traf.vs
         data['vmin']       = bs.traf.perf.vmin
         data['vmax']       = bs.traf.perf.vmax
+        data['type']     = bs.traf.type
 
         # Transition level as defined in traf
         data['translvl']   = bs.traf.translvl
