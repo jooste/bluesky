@@ -279,19 +279,19 @@ class Windfield():
                     veast  = (1.-falt)*(ve0.reshape(npos)) + falt*(ve1.reshape(npos)) # As 1D array
 
         # Return same type as positons were given
-        if type(userlat)==ndarray:
-            return vnorth,veast
+        if isinstance(userlat, ndarray):
+            return vnorth, veast
 
-        elif type(userlat)==list:
+        elif isinstance(userlat, list):
             return list(vnorth),list(veast)
 
         else:
-            return float(vnorth),float(veast)
+            return float(vnorth[0]),float(veast[0])
 
     def remove(self,idx): # remove a point using the returned index when it was added
         if idx<len(self.lat):
             self.lat = delete(self.lat,idx)
-            self.lon = delete(self.lat,idx)
+            self.lon = delete(self.lon,idx)
 
             self.vnorth = delete(self.vnorth,idx,axis=1)
             self.veast  = delete(self.veast ,idx,axis=1)
