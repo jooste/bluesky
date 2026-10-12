@@ -19,6 +19,9 @@ from bluesky.network.common import ActionType
 # whenever a state update of each topic is received
 sigchanged: dict[str, signal.Signal] = dict()
 
+# TODO: 
+# - reset als method van store, behoud attributes, reset to default constructor of waarde uit defaults
+# - Store.notify_changed alleen emitten als self.valid()
 
 def reset(remote_id=None):
     ''' Reset shared state data to defaults for remote simulation. '''
