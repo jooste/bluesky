@@ -86,7 +86,7 @@ class Server:
         if startscn:
             args.extend(['--scenfile', startscn])
         if platform.system() == 'Windows':
-                kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+                kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP # type: ignore
         return newid, await asyncio.subprocess.create_subprocess_exec(*args, **kwargs)
 
     async def addnodes(self, count=1, node_ids=None, startscn=None):
