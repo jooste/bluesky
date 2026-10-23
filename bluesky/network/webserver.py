@@ -13,6 +13,8 @@ from fastapi.encoders import jsonable_encoder
 from starlette.middleware.sessions import SessionMiddleware
 
 from contextlib import asynccontextmanager
+import pathlib
+from os.path import normpath
 
 from bluesky.network.common import genid, unpack_zmq_msgid, ws_msgid, zmq_msgid
 from bluesky.network.npcodec import encode_json
@@ -101,6 +103,18 @@ async def request_data(node_id: Annotated[str, Path(description='Network ID of t
         jsonable_encoder(await manager.request(
             node_id, *topics.split(','), timeout=timeout
             ), custom_encoder={ndarray: encode_json}))
+
+
+@app.get('/api/scenarios/{file_path:path}', description='Request scenario folder listing.')
+async def scenarios(path: str = '.'):
+    ''' Request scenario folder or sub-folder listing. '''
+    normalised = normpath(path)
+    if '..' in normalised:
+        raise HTTPException(status_code=403)
+    resolved = pathlib.Path('scenario') / normalised
+    if resolved.is_dir():
+        return [f.name + ('/' if f.is_dir() else '') for f in resolved.glob('*') if f.is_dir() or f.suffix.lower() == '.scn']
+    raise HTTPException(status_code=415, detail='Path does not correspond to a folder.')
 
 
 class WebServer(Server):
