@@ -12,6 +12,7 @@ from fastapi.encoders import jsonable_encoder
 
 from starlette.middleware.sessions import SessionMiddleware
 
+
 from contextlib import asynccontextmanager
 import pathlib
 from os.path import normpath
@@ -65,6 +66,13 @@ app.add_middleware(
 # app.mount('/static', StaticFiles(directory='static'), name='static')
 templates = Jinja2Templates(directory='templates')
 
+# TEMP for testing
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*']
+)
+
 
 @app.get('/', response_class=HTMLResponse)
 async def root(request: Request, client_id: EnsureClientID):#, act_id: EnsureActId):
@@ -106,9 +114,9 @@ async def request_data(node_id: Annotated[str, Path(description='Network ID of t
 
 
 @app.get('/api/scenarios/{file_path:path}', description='Request scenario folder listing.')
-async def scenarios(path: str = '.'):
+async def scenarios(file_path: str = '.'):
     ''' Request scenario folder or sub-folder listing. '''
-    normalised = normpath(path)
+    normalised = normpath(file_path)
     if '..' in normalised:
         raise HTTPException(status_code=403)
     resolved = pathlib.Path('scenario') / normalised
