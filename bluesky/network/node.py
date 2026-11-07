@@ -4,7 +4,8 @@ import zmq
 import msgpack
 import bluesky as bs
 from bluesky import stack
-from bluesky.core import Entity, Signal
+from bluesky.core.entity import Entity
+from bluesky.core.signal import Signal
 from bluesky.network import context as ctx
 from bluesky.network.subscriber import Subscription
 from bluesky.network.npcodec import encode_ext, ext_hook

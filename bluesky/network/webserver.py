@@ -93,23 +93,38 @@ async def get_nodes():
 @app.put('/api/nodes/{node_id}/send/{topic}', description='Send information to a simulation node.')
 async def send_data(node_id: Annotated[str, Path(description='Network ID of the node to send data to')],
                     topic: Annotated[str, Path(description='Topic of the data to send', pattern=r'^[A-Za-z]+$')],
+                    client_id: EnsureClientID,
                     body: Annotated[dict, Body()]):
     manager = WebServer.instance()
-    if node_id not in manager.sim_nodes:
-        raise HTTPException(422, f'Node with ID {node_id} does not exist, or is not connected to this server. Existing node ID\'s: {", ".join(manager.sim_nodes)}')
-    print(body)
+    if node_id not in manager.all_nodes:
+        raise HTTPException(422, f'Node with ID {node_id} does not exist, or is not connected to this server. Existing node ID\'s: {", ".join(manager.all_nodes)}')
+    await manager.send(topic, body, node_id, client_id)
 
 
-@app.get('/api/nodes/{node_id}/request/{topics}', description='Request the full state for one or more topics.')
-async def request_data(node_id: Annotated[str, Path(description='Network ID of the node to get data from')],
-                       topics: Annotated[str, Path(description='One or more topics to request data for, separated by commas', pattern=r'^[A-Za-z]+(?:,[A-Za-z]+)*$')],
-                       timeout: Annotated[float, Query(description='Maximum number of seconds to wait for the simulation data request.', ge=0.0)] = 5.0):
+@app.get('/api/nodes/{node_id}/request/{topic}', description='Request the full state for a regular publisher topic.')
+async def request_regular(node_id: Annotated[str, Path(description='Network ID of the node to get data from')],
+                       topic: Annotated[str, Path(description='Topic to request data for', pattern=r'[A-Za-z]+')],
+                       timeout: Annotated[float, Query(description='Maximum number of seconds to wait for the simulation data request.', ge=0.0)] = 5.0,):
     manager = WebServer.instance()
     if node_id not in manager.sim_nodes:
         raise HTTPException(422, f'Node with ID {node_id} does not exist, or is not connected to this server. Existing node ID\'s: {", ".join(manager.sim_nodes)}')
     return JSONResponse(content=
         jsonable_encoder(await manager.request(
-            node_id, *topics.split(','), timeout=timeout
+            node_id, [topic], timeout=timeout
+            ), custom_encoder={ndarray: encode_json}))
+
+
+@app.get('/api/nodes/{node_id}/request/{entity}/{variables}', description='Request specific variables from an entity.')
+async def request_entity(node_id: Annotated[str, Path(description='Network ID of the node to get data from')],
+                       entity: Annotated[str, Path(description='Name of the entity to get data from (e.g., Traffic)', pattern=r'[A-Za-z]+')],
+                       variables: Annotated[str, Path(description='Comma-separated list of variables to receive specifically, if supported by the publisher', pattern=r'(^[A-Za-z]+(?:,[A-Za-z]+)*$)*')],
+                       timeout: Annotated[float, Query(description='Maximum number of seconds to wait for the simulation data request.', ge=0.0)] = 5.0,):
+    manager = WebServer.instance()
+    if node_id not in manager.sim_nodes:
+        raise HTTPException(422, f'Node with ID {node_id} does not exist, or is not connected to this server. Existing node ID\'s: {", ".join(manager.sim_nodes)}')
+    return JSONResponse(content=
+        jsonable_encoder(await manager.request(
+            node_id, entity, variables=variables.split(','), timeout=timeout
             ), custom_encoder={ndarray: encode_json}))
 
 

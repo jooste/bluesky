@@ -3,7 +3,7 @@ import numpy as np
 
 import bluesky as bs
 from bluesky.tools.aero import ft, nm
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 from bluesky.stack import command
 
 

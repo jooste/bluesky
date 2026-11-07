@@ -2,7 +2,7 @@
 from numpy import arctan2,degrees,array,sqrt # to allow arrays, their functions and types
 
 from bluesky.tools.aero import kts, ft
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 from bluesky.stack import command
 from .windfield import Windfield
 

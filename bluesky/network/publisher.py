@@ -32,10 +32,16 @@ class PublisherMeta(type):
 
     @subscriber
     @staticmethod
-    def request(*topics):
-        ''' Clients can request a full state update, to which this function responds. '''
+    def request(topics, **detailed_req):
+        ''' Clients can request a full state update, to which this function responds. 
+            When no further request arguments are passed one or more topic names can be passed as a list.
+
+            Optionally request details can be passed, in which case a dictionary is needed, where dict keys 
+            correspond to each topic name. The value should again be a dict with the named arguments that need 
+            to be passed to the payload function of the topic's publisher. 
+        '''
         for pub in (p for p in map(PublisherMeta.__publishers__.get, topics) if p is not None):
-            pub.send_replace(to_group=ctx.sender_id)
+            pub.send_replace(to_group=ctx.sender_id, payload_kwargs=detailed_req)
 
 
 class StatePublisher(metaclass=PublisherMeta):
@@ -114,8 +120,8 @@ class StatePublisher(metaclass=PublisherMeta):
             else:
                 bs.net.send(self.topic, [ActionType.Extend.value, data], to_group)
 
-    def send_replace(self, to_group='', **data):
-        data = data or self.get_payload()
+    def send_replace(self, to_group='', payload_kwargs=None, **data):
+        data = data or self.get_payload(**payload_kwargs) if payload_kwargs else self.get_payload()
         if data:
             bs.net.send(self.topic, [ActionType.Replace.value, data], to_group)
 

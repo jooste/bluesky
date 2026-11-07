@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QListView, QStyledItemDelegate, QApplication as app
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtCore import QSize, Qt, QRect, QAbstractListModel, QModelIndex, Qt, QVariant, QTimer
 
-from bluesky.core import Base
+from bluesky.core.base import Base
 from bluesky.network.subscriber import subscriber
 from bluesky.network.sharedstate import ActData
 from bluesky.tools import aero

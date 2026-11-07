@@ -1,7 +1,8 @@
 """ Airspace metrics plugin. """
 import numpy as np
 from bluesky import stack, traf, sim  #, settings, navdb, traf, sim, scr, tools
-from bluesky.core import Entity, timed_function
+from bluesky.core.entity import Entity
+from bluesky.core.timedfunction import timed_function
 from bluesky.tools import areafilter, datalog, plotter, geo
 from bluesky.tools.aero import nm, ft
 

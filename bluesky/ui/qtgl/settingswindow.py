@@ -10,7 +10,7 @@ import bluesky as bs
 from bluesky.network.common import genid
 from bluesky.network.subscriber import subscribe
 import bluesky.network.sharedstate as ss
-from bluesky.core import Base
+from bluesky.core.base import Base
 
 
 def sel_palette(value, changed_fun):

@@ -6,7 +6,7 @@ from PyQt6.QtCore import QSize, Qt, QRect, QAbstractListModel, QModelIndex, Qt, 
 from bluesky.network import context as ctx
 from bluesky.network.subscriber import subscriber
 from bluesky.network.sharedstate import ActData
-from bluesky.core import Base
+from bluesky.core.base import Base
 from bluesky.ui import palette
 import bluesky as bs
 

@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QTextEdit, QLabel
 
 import bluesky as bs
-from bluesky.core import Base
+from bluesky.core.base import Base
 from bluesky.network import subscriber
 from bluesky.network.client import Client
 from bluesky.stack import stack

@@ -9,7 +9,7 @@ import subprocess
 import numpy as np
 
 import bluesky as bs
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 from bluesky import stack
 from bluesky.tools import geo, areafilter
 from bluesky.tools.aero import ft, kts, nm

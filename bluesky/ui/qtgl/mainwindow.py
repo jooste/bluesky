@@ -11,7 +11,8 @@ from PyQt6 import uic
 
 # Local imports
 import bluesky as bs
-from bluesky.core import Base, Signal
+from bluesky.core.base import Base
+from bluesky.core.signal import Signal
 from bluesky.network.discovery import Discovery
 
 from bluesky import stack

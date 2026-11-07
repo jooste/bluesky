@@ -15,7 +15,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas#
     #NavigationToolbar2QT as NavigationToolbar
 
 from bluesky import stack
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 from bluesky.network import subscriber, context as ctx
 
 

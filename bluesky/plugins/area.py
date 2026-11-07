@@ -5,7 +5,8 @@ import numpy as np
 # Import the global bluesky objects. Uncomment the ones you need
 from bluesky import traf, sim  #, settings, navdb, traf, sim, scr, tools
 from bluesky.tools import datalog, areafilter
-from bluesky.core import Entity, timed_function
+from bluesky.core.entity import Entity
+from bluesky.core.timedfunction import timed_function
 from bluesky.tools.aero import ft,kts,nm,fpm
 
 # Log parameters for the flight statistics log

@@ -134,7 +134,7 @@ class Server:
     async def _request_response(self, node_id, topic):
         return await self._requests[(node_id, topic)].get()
 
-    async def request(self, node_id, *topics, timeout=0.0) -> dict|str|None:
+    async def request(self, node_id, *topics, timeout=0.0, **detailed_req) -> dict|str|None:
         ''' Send a data request to a node for one or more topics. 
             When timeout is larger than zero this method will block until all
             responses are in, or when the timeout duration is reached.
@@ -144,7 +144,8 @@ class Server:
         if node_id not in self.sim_nodes:
             return f'Node with ID {node_id} does not exist, or is not connected to this server.'
         utopics = [t.upper() for t in topics]
-        snd = self.send('REQUEST', utopics, node_id)
+        detailed_req.update(topics=utopics)
+        snd = self.send('REQUEST', detailed_req, node_id)
         if timeout == 0:
             return await snd
         
@@ -185,6 +186,7 @@ class Server:
             - node_id: The id of the node to register
         '''
         # This is an initial client, server, or node subscription
+        self.all_nodes.add(node_id)
         if node_id[0] == GROUPID_SIM and node_id in self.spawned_processes:
             # This is a node owned by this server which has successfully started.
             if node_id not in self.sim_nodes:

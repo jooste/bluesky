@@ -8,7 +8,7 @@ from bluesky.tools import geo
 from bluesky.tools.misc import degto180
 from bluesky.tools.position import txt2pos
 from bluesky.tools.aero import ft, nm, fpm, vcasormach2tas, vcas2tas, tas2cas, cas2tas, g0
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 from .route import Route
 
 # debug

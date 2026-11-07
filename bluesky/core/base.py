@@ -12,6 +12,8 @@ import inspect
 from typing import ClassVar
 
 from bluesky.core.funcobject import FuncObject
+from bluesky.network.publisher import state_publisher
+
 
 # Global dictionary of replaceable BlueSky classes
 replaceables: dict[str, type['Base']] = dict()
@@ -166,6 +168,11 @@ class Base:
         cls = type(self)
         if cls._selinstance is None and cls is cls.selected():
             cls.select(self)
+
+        @state_publisher(topic=cls.__name__)
+        def payload(variables=None):
+            if isinstance(variables, (list, tuple)):
+                return {name: getattr(self, name) for name in variables if hasattr(self, name)}
 
     def __new__(cls, *args, **kwargs):
         ''' Replaced new to allow base class to construct selected derived instances. '''

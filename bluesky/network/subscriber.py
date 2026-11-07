@@ -243,4 +243,4 @@ def on_node_added(node_id):
     '''
     topics = [topic for topic, sub in SubscriptionFactory.subscriptions.items() 
               if sub.msg_type in (MessageType.Unknown, MessageType.SharedState)]
-    bs.net.send('REQUEST', topics, to_group=node_id)
+    bs.net.send('REQUEST', dict(topics=topics), to_group=node_id)

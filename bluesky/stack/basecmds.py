@@ -4,7 +4,8 @@ from pathlib import Path
 
 import bluesky as bs
 from bluesky import settings
-from bluesky.core import select_implementation, simtime, varexplorer as ve
+from bluesky.core.base import select_implementation
+from bluesky.core import simtime, varexplorer as ve
 from bluesky.tools import geo, aero, areafilter, plotter
 from bluesky.tools.calculator import calculator
 from bluesky.stack.cmdparser import append_commands

@@ -5,7 +5,8 @@ from random import randint
 import numpy as np
 
 import bluesky as bs
-from bluesky.core import Entity, Timer
+from bluesky.core.entity import Entity
+from bluesky.core.simtime import Timer
 from bluesky.stack.recorder import savecmd
 from bluesky.tools import geo
 from bluesky.tools.misc import latlon2txt

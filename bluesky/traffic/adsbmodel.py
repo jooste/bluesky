@@ -2,7 +2,7 @@
 import numpy as np
 import bluesky as bs
 from bluesky.tools.aero import ft
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 
 
 class ADSB(Entity, replaceable=True):

@@ -1,5 +1,5 @@
 from pathlib import Path
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 from bluesky.stack import commandgroup
 from bluesky.stack.simstack import process, merge
 

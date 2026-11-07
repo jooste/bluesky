@@ -18,7 +18,8 @@ import requests
 import numpy as np
 
 from bluesky import stack, settings, traf
-from bluesky.core import Entity, timed_function
+from bluesky.core.entity import Entity
+from bluesky.core.timedfunction import timed_function
 from bluesky.tools import cachefile
 settings.set_variable_defaults(opensky_user=None, opensky_password=None,
                                opensky_ownonly=False)

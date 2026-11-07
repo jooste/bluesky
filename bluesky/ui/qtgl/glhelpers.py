@@ -16,7 +16,7 @@ from PyQt6.QtOpenGL import (QOpenGLShader, QOpenGLShaderProgram,
 from PyQt6.QtGui import QSurfaceFormat, QOpenGLContext, QImage
 
 import bluesky as bs
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 from bluesky.stack import command
 from bluesky.ui.qtgl.dds import DDSTexture
 

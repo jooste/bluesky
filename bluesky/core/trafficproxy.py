@@ -1,6 +1,6 @@
 import numpy as np
 
-from bluesky.core import Base
+from bluesky.core.base import Base
 from bluesky.network.sharedstate import ActData
 
 

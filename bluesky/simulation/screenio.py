@@ -5,7 +5,7 @@ import numpy as np
 # Local imports
 import bluesky as bs
 from bluesky import stack
-from bluesky.core import Entity
+from bluesky.core.entity import Entity
 from bluesky.tools import aero
 from bluesky.core.walltime import Timer
 from bluesky.network.publisher import state_publisher, StatePublisher
